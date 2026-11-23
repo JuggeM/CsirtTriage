@@ -35,6 +35,12 @@ jobs:
           .\tools\Test-UacDetections.ps1 -Exe (Resolve-Path src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll).Path -WorkFolder (Join-Path $env:RUNNER_TEMP 'UacRegression')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Regression test, mixed UAC + KAPE case in parallel
+        shell: pwsh
+        run: |
+          .\tools\Test-MixedCase.ps1 -Exe (Resolve-Path src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll).Path -WorkFolder (Join-Path $env:RUNNER_TEMP 'MixedRegression')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Keep the run output when a test fails
         if: failure()
         uses: actions/upload-artifact@v4

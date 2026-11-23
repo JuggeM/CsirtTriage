@@ -33,7 +33,8 @@ $runArgs = @('--case', $WorkFolder, '--name', 'Regression', '--uac-only')
 if ($Exe -like '*.dll') { $file = 'dotnet'; $runArgs = @($Exe) + $runArgs } else { $file = $Exe }
 $log = Join-Path $WorkFolder 'run.log'
 $p = Start-Process -FilePath $file -ArgumentList $runArgs -Wait -PassThru -NoNewWindow -RedirectStandardOutput $log
-if ($p.ExitCode -ne 0) { throw "CsirtTriage exited with $($p.ExitCode); see $log" }
+# Exit code 3: some collections failed, expected here (the corrupt archive)
+if ($p.ExitCode -ne 3) { throw "CsirtTriage exited with $($p.ExitCode), expected 3 (one failed collection); see $log" }
 
 $level2 = Join-Path $WorkFolder 'Level2'
 $processed = Join-Path $WorkFolder 'Processed'
@@ -60,7 +61,8 @@ Write-Host 'Extraction and per-collection checks'
 Check (Test-Path (Join-Path $decomp $web)) 'web01 extracted from Uploads\'
 Check (-not (Get-ChildItem $decomp -Directory -Filter '_partial_*')) 'no _partial_ folders left'
 Check (-not (Get-ChildItem $decomp -Directory -Filter 'uac-broken*')) 'corrupt archive leaves no folder'
-Check ($runLog -match 'uac-broken-linux-20261106\.tar\.gz') 'corrupt archive reported'
+Check ($runLog -match '\[ERROR\] \[uac-broken-linux-20261106\]') 'corrupt archive reported'
+Check ($runLog -match 'Run finished: 4 analysed, 1 failed') 'four analysed, one failed, mail01 not re-run'
 Check ((Get-Content (Join-Path (Join-Path $level2 $mail) 'Findings.csv') -Raw) -match 'Pre-existing output') 'mail01 already analysed: left untouched'
 Check (-not (Select-String -Path (Join-Path (Join-Path $processed $fil) '*.csv') -Pattern 'STALE-ROW' -Quiet)) 'file01 stale Processed\ rows replaced'
 Check (-not (Select-String -Path (Join-Path (Join-Path $level2 $fil) 'Findings.csv') -Pattern 'STALE-ROW' -Quiet)) 'file01 stale Level2\ rows replaced'

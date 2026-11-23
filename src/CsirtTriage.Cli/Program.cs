@@ -1,7 +1,8 @@
-using CsirtTriage.Core.Kape;
-using CsirtTriage.Core.Uac;
+using CsirtTriage.Core.Case;
 
-// Headless runner: csirttriage --case <folder> [--name <case>] [--analyst <name>] [--uac-only | --kape-only]
+// Headless runner, same scan and runner as the app:
+//   csirttriage --case <folder> [--name <case>] [--analyst <name>] [--list]
+//               [--parallel <n>] [--only <name,name,…>] [--reanalyse] [--uac-only | --kape-only] [--no-ioc-search]
 string? Arg(string name)
 {
     int i = Array.FindIndex(args, a => a.Equals(name, StringComparison.OrdinalIgnoreCase));
@@ -12,42 +13,63 @@ bool Flag(string name) => args.Any(a => a.Equals(name, StringComparison.OrdinalI
 var caseFolder = Arg("--case");
 if (caseFolder is null)
 {
-    Console.Error.WriteLine("Usage: csirttriage --case <folder> [--name <case>] [--analyst <name>] [--uac-only | --kape-only]");
+    Console.Error.WriteLine("""
+        Usage: csirttriage --case <folder> [options]
+          --name <case>         case name (default: folder name)
+          --analyst <name>      analyst (default: user name)
+          --list                list the collections found and exit
+          --parallel <n>        collections analysed at the same time (default: half the cores, max 4)
+          --only <a,b,…>        only these collections (names as --list shows them)
+          --reanalyse           also run collections that are already analysed
+          --uac-only            only UAC collections
+          --kape-only           only KAPE collections
+          --no-ioc-search       skip the case IOC search
+        """);
     return 2;
 }
 caseFolder = Path.GetFullPath(caseFolder);
-var caseName = Arg("--name") ?? Path.GetFileName(caseFolder);
-var analyst = Arg("--analyst") ?? Environment.UserName;
+var settings = new TriageSettings
+{
+    CaseFolder = caseFolder,
+    CaseName = Arg("--name") ?? Path.GetFileName(caseFolder),
+    Analyst = Arg("--analyst") ?? Environment.UserName,
+    SearchIocs = !Flag("--no-ioc-search"),
+};
+if (int.TryParse(Arg("--parallel"), out var parallel)) settings.MaxParallel = parallel;
 
+var all = CollectionScanner.Scan(caseFolder, measureSizes: Flag("--list"));
+if (Flag("--list"))
+{
+    Console.WriteLine($"{"Collection",-40} {"Host",-10} {"Type",-5} {"Collected",-11} {"Size",9}  {"Status",-24} Action");
+    foreach (var e in all)
+        Console.WriteLine($"{e.Name,-40} {e.Host,-10} {e.KindLabel,-5} {e.Collected?.ToString("yyyy-MM-dd") ?? "",-11} " +
+                          $"{(e.SizeBytes.HasValue ? $"{e.SizeBytes.Value / 1048576.0:N1} MB" : ""),9}  {e.StatusLabel,-24} {e.ActionLabel}" +
+                          (e.Note.Length > 0 ? $"   ({e.Note})" : ""));
+    return 0;
+}
+
+var only = Arg("--only")?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+var selected = all.Where(e =>
+        (only == null ? e.SelectedByDefault || Flag("--reanalyse") && e.CanRun
+                      : only.Contains(e.Name, StringComparer.OrdinalIgnoreCase) && e.CanRun)
+        && !(Flag("--uac-only") && e.Kind != CollectionKind.Uac)
+        && !(Flag("--kape-only") && e.Kind != CollectionKind.Kape))
+    .ToList();
+foreach (var e in all.Where(e => e.Status == CollectionStatus.WaitingForKape))
+    Console.WriteLine($"[WARN] {e.Name}: {e.Note}");
+
+var runner = new CaseRunner(settings, (_, m) => Console.WriteLine(m));
+using var cts = new CancellationTokenSource();
+Console.CancelKeyPress += (_, a) => { a.Cancel = true; cts.Cancel(); };
 try
 {
-    if (!Flag("--kape-only"))
-    {
-        var decompressDir = Path.Combine(caseFolder, "Decompressed");
-        foreach (var uploadDir in new[] { "Upload", "Uploads" }.Select(d => Path.Combine(caseFolder, d)).Where(Directory.Exists))
-            foreach (var archive in UacExtractor.ArchivePatterns.SelectMany(p => Directory.GetFiles(uploadDir, p)))
-            {
-                var name = UacExtractor.CollectionName(archive);
-                if (UacExtractor.IsExtracted(decompressDir, name)) continue;
-                try
-                {
-                    Directory.CreateDirectory(decompressDir);
-                    UacExtractor.Extract(archive, decompressDir);
-                    Console.WriteLine($"Extracted {name}");
-                }
-                catch (Exception ex) { Console.WriteLine($"[ERROR] {Path.GetFileName(archive)}: {ex.Message}"); }
-            }
-
-        var uac = new ParserConfig { CaseFolderPath = caseFolder, CaseName = caseName, AnalystName = analyst };
-        new ParserOrchestrator(uac, Console.WriteLine).RunAll(CancellationToken.None);
-    }
-
-    if (!Flag("--uac-only"))
-    {
-        var kape = new AnalyserConfig { CaseFolderPath = caseFolder, CaseName = caseName, AnalystName = analyst };
-        new AnalysisEngine(kape, Console.WriteLine).RunAll(CancellationToken.None);
-    }
-    return 0;
+    var result = await runner.RunAsync(selected, null, cts.Token);
+    return result.Failed > 0 ? 3 : 0;   // 3: some collections failed (see the log)
+}
+catch (OperationCanceledException)
+{
+    Console.Error.WriteLine("Cancelled.");
+    return 130;
 }
 catch (Exception ex)
 {
