@@ -35,7 +35,13 @@ jobs:
           .\tools\Test-UacDetections.ps1 -Exe (Resolve-Path src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll).Path -WorkFolder (Join-Path $env:RUNNER_TEMP 'UacRegression')
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Regression test, mixed UAC + KAPE case in parallel
+      - name: Regression test, M365 (synthetic Purview audit log export, headless run)
+        shell: pwsh
+        run: |
+          .\tools\Test-M365Detections.ps1 -Exe (Resolve-Path src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll).Path -WorkFolder (Join-Path $env:RUNNER_TEMP 'M365Regression')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Regression test, mixed UAC + KAPE + M365 case in parallel
         shell: pwsh
         run: |
           .\tools\Test-MixedCase.ps1 -Exe (Resolve-Path src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll).Path -WorkFolder (Join-Path $env:RUNNER_TEMP 'MixedRegression')

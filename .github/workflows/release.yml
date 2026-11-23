@@ -36,7 +36,7 @@ jobs:
         shell: pwsh
         run: |
           $cli = (Resolve-Path src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll).Path
-          foreach ($t in 'Kape', 'Uac') {
+          foreach ($t in 'Kape', 'Uac', 'M365') {
             & ".\tools\Test-${t}Detections.ps1" -Exe $cli -WorkFolder (Join-Path $env:RUNNER_TEMP "${t}Regression")
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }

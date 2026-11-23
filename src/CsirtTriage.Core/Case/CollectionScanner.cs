@@ -12,7 +12,7 @@ public enum CollectionStatus
     Extracted,
     /// <summary>ORC archive or extracted ORC collection without KAPE output in Processed\ yet.</summary>
     WaitingForKape,
-    /// <summary>KAPE output in Processed\, not analysed yet.</summary>
+    /// <summary>KAPE output in Processed\ (or an M365 audit log export), not analysed yet.</summary>
     Ready,
     /// <summary>Analysed: Level2\&lt;collection&gt;\.processed exists.</summary>
     Analysed,
@@ -24,7 +24,7 @@ public sealed record CollectionEntry
     /// <summary>Folder name used for Processed\ and Level2\ (unique in the case).</summary>
     public required string Name { get; init; }
     public required string Host { get; init; }
-    /// <summary>UAC or KAPE; an ORC collection waiting for KAPE is KAPE.</summary>
+    /// <summary>UAC, KAPE or M365; an ORC collection waiting for KAPE is KAPE.</summary>
     public required CollectionKind Kind { get; init; }
     public required CollectionStatus Status { get; init; }
     /// <summary>UAC: archive in Uploads\ (when there is one).</summary>
@@ -45,14 +45,14 @@ public sealed record CollectionEntry
     /// <summary>Pre-selected in the table: everything that can run and isn't analysed yet.</summary>
     public bool SelectedByDefault => Status is CollectionStatus.NotExtracted or CollectionStatus.Extracted or CollectionStatus.Ready;
 
-    public string KindLabel => Kind == CollectionKind.Uac ? "UAC" : "KAPE";
-    public string OsLabel => Kind == CollectionKind.Uac ? "Linux/Unix" : "Windows";
+    public string KindLabel => Kind switch { CollectionKind.Uac => "UAC", CollectionKind.M365 => "M365", _ => "KAPE" };
+    public string OsLabel => Kind switch { CollectionKind.Uac => "Linux/Unix", CollectionKind.M365 => "Microsoft 365", _ => "Windows" };
     public string StatusLabel => Status switch
     {
         CollectionStatus.NotExtracted => "Not extracted",
         CollectionStatus.Extracted => "Extracted",
         CollectionStatus.WaitingForKape => "Waiting for KAPE",
-        CollectionStatus.Ready => "KAPE output ready",
+        CollectionStatus.Ready => Kind == CollectionKind.M365 ? "Audit log ready" : "KAPE output ready",
         _ => AnalysedAt.HasValue ? $"Analysed {AnalysedAt.Value.ToLocalTime():MM-dd HH:mm}" : "Analysed",
     };
     /// <summary>What running it would do.</summary>
@@ -67,7 +67,7 @@ public sealed record CollectionEntry
 
 /// <summary>
 /// Finds every collection in a case folder:
-///   Uploads\ (or Upload\)   UAC archives, ORC archives
+///   Uploads\ (or Upload\)   UAC archives, ORC archives; Uploads\M365\ Purview audit log CSV exports
 ///   Decompressed\           extracted UAC and ORC collections
 ///   Processed\              KAPE output (from the ORC processing script) and UAC normalised CSVs
 ///   Level2\                 analysis results (.processed marker per collection)
@@ -79,6 +79,7 @@ public static class CollectionScanner
     public const string DecompressedFolder = "Decompressed";
     public const string ProcessedFolder = "Processed";
     public const string ResultsFolder = "Level2";
+    public const string M365Folder = "M365";
 
     private static readonly string[] OrcArchiveExtensions = { ".7z", ".zip" };
     private static readonly string[] UacOsNames =
@@ -141,6 +142,34 @@ public static class CollectionScanner
             });
         }
 
+        // ── Microsoft 365 (Purview audit search CSV exports) ──────────
+        // Uploads\M365\*.csv is one collection named M365; each subfolder with CSVs is its own collection
+        foreach (var m365 in uploads.Select(u => Path.Combine(u, M365Folder)).Where(Directory.Exists))
+        {
+            var folders = new List<(string Name, string Path)>();
+            if (M365.M365Engine.CsvFiles(m365).Any()) folders.Add((M365Folder, m365));
+            foreach (var sub in SafeDirs(m365).Where(d => M365.M365Engine.CsvFiles(d).Any()))
+                folders.Add((Path.GetFileName(sub), sub));
+            foreach (var (name, path) in folders)
+            {
+                if (list.Any(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+                var analysedAt = AnalysedAt(resultsRoot, name);
+                var files = M365.M365Engine.CsvFiles(path).ToList();
+                list.Add(new CollectionEntry
+                {
+                    Name = name,
+                    Host = TenantFromResults(resultsRoot, name) ?? "M365",
+                    Kind = CollectionKind.M365,
+                    Status = analysedAt.HasValue ? CollectionStatus.Analysed : CollectionStatus.Ready,
+                    SourcePath = path,
+                    SizeBytes = files.Sum(f => SafeLength(f) ?? 0),
+                    Collected = DateFromName(name) ?? files.Select(f => DateFromName(Path.GetFileName(f))).FirstOrDefault(d => d != null),
+                    AnalysedAt = analysedAt,
+                    Note = $"{files.Count} audit log CSV file(s)",
+                });
+            }
+        }
+
         // ── ORC collections the processing script hasn't handled yet ──
         // Extracted ORC folders (not UAC) and ORC archives whose host has no KAPE output.
         var waiting = new Dictionary<string, (string Name, string Path, bool Archive)>(StringComparer.OrdinalIgnoreCase);
@@ -200,6 +229,10 @@ public static class CollectionScanner
         return DateTime.TryParseExact(s, "yyyyMMddHHmmss", CultureInfo.InvariantCulture,
             DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var t) ? t : null;
     }
+
+    /// <summary>The tenant name an earlier analysis found (host.txt), so the table shows it before re-analysing.</summary>
+    private static string? TenantFromResults(string resultsRoot, string name) =>
+        CollectionInfo.Read(Path.Combine(resultsRoot, name))?.Hostname;
 
     private static DateTime? AnalysedAt(string resultsRoot, string name)
     {

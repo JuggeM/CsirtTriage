@@ -1074,5 +1074,13 @@
       "pattern": "(^|\\.)(anydesk\\.com|teamviewer\\.com|rustdesk\\.com|screenconnect\\.com|splashtop\\.com|atera\\.com|netsupportsoftware\\.com)$",
       "severity": "Medium"
     }
-  ]
+  ],
+
+  "m365": {
+    "_comment": "Microsoft 365 unified audit log (Purview CSV export). Patterns are .NET regular expressions, case-insensitive.",
+    "suspiciousUserAgents": "BAV2ROPC|python-requests|python-urllib|Go-http-client|axios|curl/|Wget|okhttp|PostmanRuntime|aiohttp|libwww-perl|Java/|node-fetch|AADInternals|ROADtools|TokenTactics|GraphRunner|evilginx",
+    "hiddenFolders": [ "RSS Feeds", "RSS Subscriptions", "Archive", "Conversation History", "Junk Email", "Deleted Items", "Notes", "Sync Issues" ],
+    "ruleKeywords": "invoice|payment|wire|transfer|bank|iban|swift|remittance|account details|password|credential|security|phish|hack|compromise|suspicious|helpdesk|it support|urgent|ceo|payroll",
+    "privilegedRoles": [ "Global Administrator", "Company Administrator", "Privileged Role Administrator", "Privileged Authentication Administrator", "Security Administrator", "Exchange Administrator", "SharePoint Administrator", "Application Administrator", "Cloud Application Administrator", "User Administrator", "Authentication Administrator", "Hybrid Identity Administrator", "Conditional Access Administrator", "Compliance Administrator", "eDiscovery Manager" ]
+  }
 }

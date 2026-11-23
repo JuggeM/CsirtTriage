@@ -12,6 +12,7 @@ public sealed class TriageSettings
     public string Analyst { get; set; } = "";
     public ParserConfig Uac { get; set; } = new();
     public AnalyserConfig Kape { get; set; } = new();
+    public M365.M365Config M365 { get; set; } = new();
     public bool SearchIocs { get; set; } = true;
 
     /// <summary>Collections analysed at the same time. Default: half the CPU cores, at most 4.</summary>
@@ -79,7 +80,7 @@ public sealed class CaseRunner
         if (runnable.Count > 0)
         {
             Directory.CreateDirectory(_settings.ResultsRoot);
-            if (runnable.Any(e => e.Kind == CollectionKind.Kape))
+            if (runnable.Any(e => e.Kind is CollectionKind.Kape or CollectionKind.M365))
                 new AnalysisEngine(_settings.Kape, m => _log(null, m)).LoadRules();
 
             foreach (var e in runnable)
@@ -147,6 +148,12 @@ public sealed class CaseRunner
                 progress?.Report(new JobUpdate(entry.Name, JobState.Analysing));
                 // One orchestrator per collection: it keeps the collection's state while it runs
                 new ParserOrchestrator(_settings.Uac, Log).AnalyseCollection(entry.Name, root, ct);
+            }
+            else if (entry.Kind == CollectionKind.M365)
+            {
+                if (entry.SourcePath == null) throw new InvalidOperationException("no audit log folder");
+                progress?.Report(new JobUpdate(entry.Name, JobState.Analysing));
+                new M365.M365Engine(_settings, Log).AnalyseCollection(entry.Name, entry.SourcePath, ct);
             }
             else
             {

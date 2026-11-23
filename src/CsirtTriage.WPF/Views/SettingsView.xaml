@@ -94,6 +94,24 @@
             </StackPanel>
         </Expander>
 
+        <!-- ── Microsoft 365 ──────────────────────────────────── -->
+        <Expander Style="{StaticResource Section}">
+            <Expander.Header><TextBlock Text="Microsoft 365 detection (unified audit log)" FontWeight="SemiBold"/></Expander.Header>
+            <StackPanel>
+                <TextBlock Text="Brute force: failed sign-ins for one account from one IP" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.M365.BruteForceThreshold, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="Password spray: accounts with failed sign-ins from one IP" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.M365.SprayAccounts, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="Different IPs one account signs in from in a day" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.M365.IpsPerUserPerDay, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="Mass download: files one account downloads within an hour" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.M365.DownloadsPerHour, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="Mail access burst: mail items accessed in one mailbox within an hour" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.M365.MailItemsPerHour, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="User agents, hidden folders, BEC keywords and privileged roles are in the m365 section of rules.json (Windows detection below: Edit)." Style="{StaticResource Hint}"/>
+            </StackPanel>
+        </Expander>
+
         <!-- ── Windows / KAPE ─────────────────────────────────── -->
         <Expander Style="{StaticResource Section}">
             <Expander.Header><TextBlock Text="Windows detection (KAPE)" FontWeight="SemiBold"/></Expander.Header>

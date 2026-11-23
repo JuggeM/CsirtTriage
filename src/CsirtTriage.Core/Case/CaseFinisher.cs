@@ -85,9 +85,12 @@ public static class CaseFinisher
                         log($"[WARN] {info.Collection}: KAPE output folder no longer exists ({info.SourceRoot}) — IOC search skipped.");
                         continue;
                     }
-                    hits = info.Kind == CollectionKind.Kape
-                        ? IocSearch.SearchKapeHost(info.SourceRoot, matcher, ct)
-                        : IocSearch.SearchUacCollection(info.ProcessedDir, dir, Directory.Exists(info.SourceRoot) ? info.SourceRoot : null, matcher, ct);
+                    hits = info.Kind switch
+                    {
+                        CollectionKind.Kape => IocSearch.SearchKapeHost(info.SourceRoot, matcher, ct),
+                        CollectionKind.M365 => IocSearch.SearchM365(info.ProcessedDir, matcher, ct),
+                        _ => IocSearch.SearchUacCollection(info.ProcessedDir, dir, Directory.Exists(info.SourceRoot) ? info.SourceRoot : null, matcher, ct),
+                    };
                     searched++;
                     if (hits.Count > 0) withHits++;
                     foreach (var h in hits) hitValues.Add(h.Ioc);
@@ -109,7 +112,7 @@ public static class CaseFinisher
     /// <summary>QuickWins.rtf from the collection's text source, in its own layout.</summary>
     public static void RenderQuickWins(string resultsDir, CollectionInfo info)
     {
-        if (info.Kind == CollectionKind.Kape) QuickWinsRtf.Convert(resultsDir);
+        if (info.Kind is CollectionKind.Kape or CollectionKind.M365) QuickWinsRtf.Convert(resultsDir);
         else Uac.QuickWinsRtfConverter.Convert(resultsDir);
     }
 

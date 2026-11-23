@@ -31,6 +31,7 @@ jobs:
           $case = Join-Path $env:RUNNER_TEMP 'INC-4711'
           .\tools\New-UacTestCase.ps1 -Path $case | Out-Null
           .\tools\New-KapeTestCase.ps1 -CaseFolder $case 3>$null | Out-Null
+          .\tools\New-M365TestCase.ps1 -CaseFolder $case | Out-Null
           Copy-Item tools\example-iocs.txt (Join-Path $case 'iocs.txt') -Force
           # Leave out the test-only oddities (corrupt archive, fake earlier output)
           Remove-Item (Join-Path $case 'Uploads\uac-broken-linux-20261106.tar.gz') -Force

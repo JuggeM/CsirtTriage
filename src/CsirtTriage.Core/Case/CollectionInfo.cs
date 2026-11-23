@@ -2,20 +2,20 @@ using System.Text;
 
 namespace CsirtTriage.Core.Case;
 
-public enum CollectionKind { Uac, Kape }
+public enum CollectionKind { Uac, Kape, M365 }
 
 /// <summary>
 /// What the case-wide steps need to know about one analysed collection,
 /// stored as host.txt in Level2\&lt;collection&gt;\ (key=value lines).
 /// </summary>
-/// <param name="SourceRoot">KAPE: the host's module output folder. UAC: the extracted collection root.</param>
-/// <param name="ProcessedDir">UAC: Processed\&lt;collection&gt; (normalised CSVs). KAPE: empty.</param>
+/// <param name="SourceRoot">KAPE: the host's module output folder. UAC: the extracted collection root. M365: the folder with the audit log CSVs.</param>
+/// <param name="ProcessedDir">UAC and M365: Processed\&lt;collection&gt; (normalised CSVs). KAPE: empty.</param>
 public sealed record CollectionInfo(string Hostname, string Collection, CollectionKind Kind,
                                     string SourceRoot, string ProcessedDir, IReadOnlyCollection<string> Ips)
 {
     public const string FileName = "host.txt";
 
-    public string KindLabel => Kind == CollectionKind.Uac ? "UAC" : "KAPE";
+    public string KindLabel => Kind switch { CollectionKind.Uac => "UAC", CollectionKind.M365 => "M365", _ => "KAPE" };
 
     public void Write(string resultsDir)
     {
@@ -40,7 +40,7 @@ public sealed record CollectionInfo(string Hostname, string Collection, Collecti
         return new CollectionInfo(
             host.Length > 0 ? host : collection,
             collection,
-            kv.GetValueOrDefault("Kind", "KAPE").Equals("UAC", StringComparison.OrdinalIgnoreCase) ? CollectionKind.Uac : CollectionKind.Kape,
+            kv.GetValueOrDefault("Kind", "KAPE").ToUpperInvariant() switch { "UAC" => CollectionKind.Uac, "M365" => CollectionKind.M365, _ => CollectionKind.Kape },
             kv.GetValueOrDefault("SourceRoot", ""),
             kv.GetValueOrDefault("ProcessedDir", ""),
             kv.GetValueOrDefault("IPs", "").Split(',', StringSplitOptions.RemoveEmptyEntries));

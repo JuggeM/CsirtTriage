@@ -83,6 +83,22 @@
                         <GroupStyle ContainerStyle="{StaticResource CategoryHeader}"/>
                     </ItemsControl.GroupStyle>
                 </ItemsControl>
+
+                <DockPanel Margin="0,24,0,0">
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Content="All" Style="{StaticResource StandardButton}" Command="{Binding AllSourcesCommand}" CommandParameter="M365" Margin="0,0,6,0"/>
+                        <Button Content="None" Style="{StaticResource StandardButton}" Command="{Binding NoSourcesCommand}" CommandParameter="M365"/>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Microsoft 365" FontWeight="SemiBold" FontSize="13"/>
+                        <TextBlock Text="Purview audit search CSV exports in Uploads\M365\" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                </DockPanel>
+                <ItemsControl ItemsSource="{Binding M365Sources}" ItemTemplate="{StaticResource SourceRow}">
+                    <ItemsControl.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource CategoryHeader}"/>
+                    </ItemsControl.GroupStyle>
+                </ItemsControl>
             </StackPanel>
         </Grid>
     </StackPanel>

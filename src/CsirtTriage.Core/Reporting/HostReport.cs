@@ -47,7 +47,7 @@ public static class HostReport
         // tools read alike and QuickWinsRtf can lay the file out as tables.
         var sb = new StringBuilder();
         sb.AppendLine("##########################################");
-        sb.AppendLine("# Quick Wins - CsirtTriage (KAPE)");
+        sb.AppendLine($"# Quick Wins - CsirtTriage ({host.KindLabel})");
         sb.AppendLine($"# Generated on {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
         sb.AppendLine("##########################################");
 
@@ -63,13 +63,15 @@ public static class HostReport
         Header(sb, "HOST");
         sb.AppendLine($"  Host:       {host.Hostname}");
         sb.AppendLine($"  Collection: {host.Collection}");
-        sb.AppendLine($"  IP:         {(host.Ips.Count > 0 ? string.Join(", ", host.Ips) : "unknown (not found in the registry)")}");
-        sb.AppendLine("  Timezone:   all times UTC (EZ Tools output)");
+        bool cloud = host.Kind == Case.CollectionKind.M365;
+        sb.AppendLine(cloud ? "  Tenant:     Microsoft 365 (unified audit log)"
+                            : $"  IP:         {(host.Ips.Count > 0 ? string.Join(", ", host.Ips) : "unknown (not found in the registry)")}");
+        sb.AppendLine(cloud ? "  Timezone:   all times UTC (unified audit log)" : "  Timezone:   all times UTC (EZ Tools output)");
         if (ctx.Config.FilterFrom.HasValue || ctx.Config.FilterTo.HasValue)
             sb.AppendLine($"  Date filter: findings from {ctx.Config.FilterFrom:yyyy-MM-dd} to {ctx.Config.FilterTo:yyyy-MM-dd}");
         if (caseName.Length > 0) sb.AppendLine($"  Case:       {caseName}");
         if (analyst.Length > 0) sb.AppendLine($"  Analyst:    {analyst}");
-        sb.AppendLine($"  KAPE output: {host.SourceRoot}");
+        sb.AppendLine(cloud ? $"  Audit log:  {host.SourceRoot}" : $"  KAPE output: {host.SourceRoot}");
         sb.AppendLine();
 
         // KEY FINDINGS

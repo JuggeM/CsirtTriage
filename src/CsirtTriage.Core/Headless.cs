@@ -5,7 +5,7 @@ namespace CsirtTriage.Core;
 /// <summary>
 /// The headless run, shared by the CLI (csirttriage) and CsirtTriage.exe --case …:
 ///   --case &lt;folder&gt; [--name &lt;case&gt;] [--analyst &lt;name&gt;] [--list]
-///   [--parallel &lt;n&gt;] [--only &lt;name,name,…&gt;] [--reanalyse] [--uac-only | --kape-only] [--no-ioc-search]
+///   [--parallel &lt;n&gt;] [--only &lt;name,name,…&gt;] [--reanalyse] [--uac-only | --kape-only | --m365-only] [--no-ioc-search]
 /// Exit codes: 0 ok, 1 error, 2 usage, 3 some collections failed, 130 cancelled.
 /// </summary>
 public static class Headless
@@ -32,6 +32,7 @@ public static class Headless
                   --reanalyse           also run collections that are already analysed
                   --uac-only            only UAC collections
                   --kape-only           only KAPE collections
+                  --m365-only           only Microsoft 365 collections
                   --no-ioc-search       skip the case IOC search
                 """);
             return 2;
@@ -62,7 +63,8 @@ public static class Headless
                 (only == null ? e.SelectedByDefault || Flag("--reanalyse") && e.CanRun
                               : only.Contains(e.Name, StringComparer.OrdinalIgnoreCase) && e.CanRun)
                 && !(Flag("--uac-only") && e.Kind != CollectionKind.Uac)
-                && !(Flag("--kape-only") && e.Kind != CollectionKind.Kape))
+                && !(Flag("--kape-only") && e.Kind != CollectionKind.Kape)
+        && !(Flag("--m365-only") && e.Kind != CollectionKind.M365))
             .ToList();
         foreach (var e in all.Where(e => e.Status == CollectionStatus.WaitingForKape))
             output.WriteLine($"[WARN] {e.Name}: {e.Note}");

@@ -1,6 +1,6 @@
 # CsirtTriage
 
-DFIR triage for Windows analysts, in one desktop app for **Linux/Unix collections ([UAC](https://github.com/tclahr/uac))** and **Windows collections (DFIR ORC → KAPE)**. It finds every collection in a case folder, lets you choose which to extract and analyse, runs several at the same time, and writes per-collection findings, a case summary and a case report across all hosts, Linux and Windows alike.
+DFIR triage for Windows analysts, in one desktop app for **Linux/Unix collections ([UAC](https://github.com/tclahr/uac))**, **Windows collections (DFIR ORC → KAPE)** and **Microsoft 365 unified audit log exports (Purview)**. It finds every collection in a case folder, lets you choose which to extract and analyse, runs several at the same time, and writes per-collection findings, a case summary and a case report across all hosts, Linux and Windows alike.
 
 It replaces [CsirtParser.WPF](https://github.com/JuggeM/CsirtParser.WPF) (UAC) and [KapeAnalyser.WPF](https://github.com/JuggeM/KapeAnalyser.WPF) (KAPE). The detections are the same; what is new is the shared case layer: one IOC list, one case summary and one case report for the whole incident, so SSH from a Windows host to a Linux server (or the other way round) shows up as lateral movement.
 
@@ -29,10 +29,12 @@ To release a new version, push a tag (`git tag v0.2.0 && git push origin v0.2.0`
 ```
 CaseFolder\
 ├── Uploads\               UAC archives (uac-*.tar.gz) and DFIR ORC archives as received
+│   └── M365\               Purview audit search CSV exports (one collection; or one subfolder per export)
 ├── Decompressed\          extracted collections (UAC: by CsirtTriage; ORC: by your processing script)
 ├── Processed\             parsed data, level 1
 │   ├── ORC_Server_FS01_…\  KAPE module output, written by the ORC processing script (read only)
-│   └── uac-web01-linux-…\  Normalized_<SOURCE>.csv per log source (UAC)
+│   ├── uac-web01-linux-…\  Normalized_<SOURCE>.csv per log source (UAC)
+│   └── M365\                Normalized_UAL.csv: every audit record with its AuditData
 ├── iocs.txt               case IOC list (IOCs panel)
 └── Level2\                analysis results
     ├── CaseSummary.txt         hosts ranked, lateral movement, sources logging on to several hosts, IOCs across hosts, case timeline
@@ -64,6 +66,7 @@ Windows collections are processed by your ORC script (ORC → KAPE `!EZParser` �
    | Extracted (UAC) | parse and analyse |
    | KAPE output ready | analyse |
    | Waiting for KAPE | nothing yet: run the ORC processing script first |
+   | Audit log ready (M365) | analyse |
    | Analysed | re-analyse when ticked (earlier results move to `Level2\_previous`) |
 
    Everything not analysed yet is ticked. Tick or untick rows, then **Run**.
@@ -79,7 +82,7 @@ The same scan and runner without a window, for scripts and CI:
 
 ```
 CsirtTriage.exe --case X:\INC-4711 [--name <case>] [--analyst <name>] [--parallel 4]
-                [--only <collection,collection>] [--reanalyse] [--uac-only | --kape-only]
+                [--only <collection,collection>] [--reanalyse] [--uac-only | --kape-only | --m365-only]
                 [--no-ioc-search] [--list]
 ```
 
@@ -151,6 +154,20 @@ CsirtTriage.exe --case X:\INC-4711 [--name <case>] [--analyst <name>] [--paralle
 
 </details>
 
+### Microsoft 365 (unified audit log)
+
+Purview **Audit** search exported as CSV (current layout with `RecordId, CreationDate, RecordType, Operation, UserId, AuditData`, or the classic `CreationDate, UserIds, Operations, AuditData`), put in `Uploads\M365\`. The tenant is shown as a host named after its mail domain; successful sign-ins go to `Logons.csv`, so an attacker IP that also logged on to case machines is linked in the case summary.
+
+| Source | Operations | What it detects |
+|---|---|---|
+| M365-SIGNIN | `UserLoggedIn`, `UserLoginFailed` | Brute force (and *succeeded*), password spray (many accounts from one IP), legacy authentication (BAV2ROPC) and scripted clients (python, Go, curl, AADInternals…), one account from many IPs in a day |
+| M365-MAILBOX | Exchange cmdlets, OWA `UpdateInboxRules` | Inbox rules that forward, delete or hide mail (RSS Feeds, Archive…), critical with BEC keywords (invoice, payment…); mailbox forwarding (critical to external domains); FullAccess/SendAs; transport rules; audit logging switched off; IMAP/POP enabled; eDiscovery searches and exports |
+| M365-DIRECTORY | Entra ID audit | Admin roles (Global Administrator and other privileged roles critical), MFA added/removed/disabled, password resets, accounts created/deleted, app consent (admin consent critical), app credentials, domain federation changes, conditional access |
+| M365-FILES | `FileDownloaded`, `AnonymousLinkCreated` | Mass downloads (files per account per hour), 'Anyone' links |
+| M365-MAILACCESS | `MailItemsAccessed` | Mail items accessed per mailbox per hour |
+
+Thresholds are in **Settings → Microsoft 365 detection**; user agents, hidden folders, BEC keywords and privileged roles in the `m365` section of `rules.json`. Entra ID sign-in log exports are not read yet.
+
 KAPE detection patterns (tools, staging folders, command lines, web attacks, suspicious domains) are in `rules.json` next to the exe, so analysts can edit them; **Settings → Windows detection** reloads it.
 
 ## Case IOC list
@@ -170,7 +187,7 @@ dotnet publish src/CsirtTriage.WPF -c Release -r win-x64 --self-contained -p:Pub
 
 | Project | |
 |---|---|
-| `src/CsirtTriage.Core` | everything except the UI: UAC parsers, KAPE analysers, the shared case layer (scan, runner, IOCs, reports). Plain `net8.0`, builds and runs on any OS |
+| `src/CsirtTriage.Core` | everything except the UI: UAC parsers, KAPE analysers, M365 audit log analysis, the shared case layer (scan, runner, IOCs, reports). Plain `net8.0`, builds and runs on any OS |
 | `src/CsirtTriage.WPF` | the Windows app (`CsirtTriage.exe`) |
 | `src/CsirtTriage.Cli` | headless runner, any OS |
 
@@ -179,6 +196,7 @@ Regression tests build synthetic cases (all IPs from documentation ranges) and r
 ```
 .\tools\Test-UacDetections.ps1  -Exe src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll
 .\tools\Test-KapeDetections.ps1 -Exe src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll
+.\tools\Test-M365Detections.ps1 -Exe src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll
 .\tools\Test-MixedCase.ps1      -Exe src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll
 ```
 

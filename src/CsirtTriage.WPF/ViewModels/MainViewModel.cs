@@ -50,7 +50,7 @@ public class MainViewModel : ViewModelBase
     public ObservableCollection<CollectionRow> Collections { get; } = new();
     private bool _isScanning;
     public bool IsScanning { get => _isScanning; private set => SetField(ref _isScanning, value); }
-    private string _scanStatus = "Choose the case folder. It is searched for UAC archives and collections, and for KAPE output from the ORC processing script.";
+    private string _scanStatus = "Choose the case folder. It is searched for UAC archives and collections, KAPE output from the ORC processing script, and M365 audit log exports in Uploads\\M365.";
     public string ScanStatus { get => _scanStatus; private set => SetField(ref _scanStatus, value); }
 
     /// <summary>"Extract + analyse 2 · analyse 5 · re-analyse 1", for the run button.</summary>
@@ -144,6 +144,7 @@ public class MainViewModel : ViewModelBase
     public List<SourceToggle> Sources { get; }
     public ICollectionView UacSources { get; }
     public ICollectionView KapeSources { get; }
+    public ICollectionView M365Sources { get; }
     public ICommand AllSourcesCommand { get; }
     public ICommand NoSourcesCommand { get; }
 
@@ -209,6 +210,7 @@ public class MainViewModel : ViewModelBase
         Sources = SourceCatalog.Create(Settings);
         UacSources = Grouped(Sources.Where(s => s.Kind == CollectionKind.Uac));
         KapeSources = Grouped(Sources.Where(s => s.Kind == CollectionKind.Kape));
+        M365Sources = Grouped(Sources.Where(s => s.Kind == CollectionKind.M365));
         AllSourcesCommand = new RelayCommand(p => SetSources(p as string, true));
         NoSourcesCommand = new RelayCommand(p => SetSources(p as string, false));
 
@@ -291,10 +293,11 @@ public class MainViewModel : ViewModelBase
 
         var uac = entries.Count(e => e.Kind == CollectionKind.Uac);
         var kape = entries.Count(e => e.Kind == CollectionKind.Kape && e.Status != CollectionStatus.WaitingForKape);
+        var m365 = entries.Count(e => e.Kind == CollectionKind.M365);
         var waiting = entries.Count(e => e.Status == CollectionStatus.WaitingForKape);
         ScanStatus = entries.Count == 0
-            ? "No collections found. Expected UAC archives in Uploads\\, collections in Decompressed\\ or KAPE output in Processed\\."
-            : $"{entries.Count} collection(s): {uac} UAC, {kape} KAPE" + (waiting > 0 ? $", {waiting} waiting for the ORC processing script" : "") + ".";
+            ? "No collections found. Expected UAC archives in Uploads\\, collections in Decompressed\\, KAPE output in Processed\\ or M365 audit log exports in Uploads\\M365\\."
+            : $"{entries.Count} collection(s): {uac} UAC, {kape} KAPE" + (m365 > 0 ? $", {m365} M365" : "") + (waiting > 0 ? $", {waiting} waiting for the ORC processing script" : "") + ".";
         foreach (var name in LogFilters.Skip(2).ToList()) LogFilters.Remove(name);
         foreach (var e in entries) LogFilters.Add(e.Name);
         IsScanning = false;
