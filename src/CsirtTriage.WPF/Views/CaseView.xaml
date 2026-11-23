@@ -78,19 +78,19 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="90" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Type" Binding="{Binding KindLabel}" Width="52" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="70" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Type" Binding="{Binding KindLabel}" Width="48" IsReadOnly="True"/>
                 <DataGridTextColumn Header="Collection" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Collected" Binding="{Binding Collected}" Width="84" IsReadOnly="True"/>
-                <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="70" IsReadOnly="True">
+                <DataGridTextColumn Header="Collected" Binding="{Binding Collected}" Width="80" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="62" IsReadOnly="True">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock"><Setter Property="HorizontalAlignment" Value="Right"/></Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-                <DataGridTemplateColumn Header="Status" Width="1.4*" SortMemberPath="StatusLabel">
+                <DataGridTemplateColumn Header="Status" Width="1.5*" MinWidth="150" SortMemberPath="StatusLabel">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <StackPanel VerticalAlignment="Center" ToolTip="{Binding Note}">
+                            <StackPanel VerticalAlignment="Center" Margin="6,0,0,0" ToolTip="{Binding Note}">
                                 <TextBlock Text="{Binding StatusLabel}" TextTrimming="CharacterEllipsis">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
@@ -109,7 +109,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Will" Binding="{Binding ActionLabel}" Width="110" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Will" Binding="{Binding ActionLabel}" Width="104" IsReadOnly="True"/>
                 <DataGridTemplateColumn Header="" Width="30">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>

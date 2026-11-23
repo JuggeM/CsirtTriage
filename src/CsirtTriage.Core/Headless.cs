@@ -68,7 +68,7 @@ public static class Headless
             output.WriteLine($"[WARN] {e.Name}: {e.Note}");
 
         var gate = new object();
-        var runner = new CaseRunner(settings, (_, m) => { lock (gate) output.WriteLine(m); });
+        var runner = new CaseRunner(settings, (c, m) => { lock (gate) output.WriteLine(c != null && !m.Contains($"[{c}]", StringComparison.OrdinalIgnoreCase) ? $"[{c}] {m}" : m); });
         try
         {
             var result = await runner.RunAsync(selected, null, ct);

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['.github/workflows/screenshots.yml', 'src/CsirtTriage.WPF/ScreenshotMode.cs']
+    paths: ['.github/workflows/screenshots.yml', 'src/CsirtTriage.WPF/**']
 
 permissions:
   contents: write

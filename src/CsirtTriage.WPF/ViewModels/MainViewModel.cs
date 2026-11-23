@@ -60,9 +60,11 @@ public class MainViewModel : ViewModelBase
         {
             var sel = Collections.Where(c => c.IsSelected).ToList();
             if (sel.Count == 0) return "Nothing selected";
-            var parts = sel.GroupBy(c => c.Entry.ActionLabel).Select(g => $"{g.Key.ToLowerInvariant()} {g.Count()}");
-            var extractBytes = sel.Where(c => c.Entry.Status == CollectionStatus.NotExtracted).Sum(c => c.Entry.SizeBytes ?? 0);
-            return string.Join(" · ", parts) + (extractBytes > 0 ? $"  ({extractBytes / 1048576.0:N0} MB of archives to extract)" : "");
+            var parts = sel.GroupBy(c => c.Entry.ActionLabel).Select(g => $"{g.Key}: {g.Count()}");
+            var extract = sel.Where(c => c.Entry.Status == CollectionStatus.NotExtracted).ToList();
+            long bytes = extract.Sum(c => c.Entry.SizeBytes ?? 0);
+            return string.Join(Environment.NewLine, parts)
+                   + (bytes > 0 ? $"{Environment.NewLine}{CollectionRow.FormatSize(bytes)} of archives to extract" : "");
         }
     }
     public int SelectedCount => Collections.Count(c => c.IsSelected);
@@ -553,5 +555,8 @@ public enum LogLevel { Info, Success, Warning, Error }
 
 public record LogEntry(DateTime Timestamp, string Message, LogLevel Level, string? Collection = null)
 {
-    public string Display => $"[{Timestamp:HH:mm:ss}] {Message}";
+    // Lines from the parsers don't name their collection; with several running at once they need to
+    public string Display => Collection != null && !Message.Contains($"[{Collection}]", StringComparison.OrdinalIgnoreCase)
+        ? $"[{Timestamp:HH:mm:ss}] [{Collection}] {Message}"
+        : $"[{Timestamp:HH:mm:ss}] {Message}";
 }

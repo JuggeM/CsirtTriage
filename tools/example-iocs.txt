@@ -1,6 +1,6 @@
-# Example IOC list for CSIRT UAC Parser
+# Example case IOC list for CsirtTriage
 # Paste into the IOCs panel, use "Import file…", or copy to <case>\iocs.txt.
-# Values match the synthetic test case from tools\New-TestCase.ps1.
+# Values match the synthetic test cases from tools\New-UacTestCase.ps1 and New-KapeTestCase.ps1.
 #
 # Rules: one or more IOCs per line (space, comma or semicolon separated),
 # text after " #" is a comment, defanged values are fixed automatically.

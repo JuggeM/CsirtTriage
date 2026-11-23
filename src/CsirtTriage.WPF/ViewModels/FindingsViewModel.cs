@@ -9,7 +9,11 @@ using CsirtTriage.Core.Reporting;
 namespace CsirtTriage.WPF.ViewModels;
 
 public sealed record FindingRow(DateTime? Time, string TimeText, string Host, string Collection, string Kind,
-                                string Severity, int Rank, string Source, int Count, string Text, string Detail, string Artifact);
+                                string Severity, int Rank, string Source, int Count, string Text, string Detail, string Artifact)
+{
+    /// <summary>Sort key: findings without a time (history files, crontabs) come after the timed ones.</summary>
+    public DateTime TimeSort => Time ?? DateTime.MaxValue;
+}
 
 /// <summary>
 /// The "Findings" panel: every collection's findings in one filterable grid,
@@ -124,7 +128,7 @@ public sealed class FindingsViewModel : ViewModelBase
         {
             View.SortDescriptions.Clear();
             View.SortDescriptions.Add(new SortDescription(nameof(FindingRow.Rank), ListSortDirection.Ascending));
-            View.SortDescriptions.Add(new SortDescription(nameof(FindingRow.TimeText), ListSortDirection.Ascending));
+            View.SortDescriptions.Add(new SortDescription(nameof(FindingRow.TimeSort), ListSortDirection.Ascending));
         }
         Status = Rows.Count == 0 ? "No findings yet. Run the analysis first." : "";
         Apply();

@@ -53,7 +53,7 @@ public sealed record CollectionEntry
         CollectionStatus.Extracted => "Extracted",
         CollectionStatus.WaitingForKape => "Waiting for KAPE",
         CollectionStatus.Ready => "KAPE output ready",
-        _ => AnalysedAt.HasValue ? $"Analysed {AnalysedAt.Value.ToLocalTime():yyyy-MM-dd HH:mm}" : "Analysed",
+        _ => AnalysedAt.HasValue ? $"Analysed {AnalysedAt.Value.ToLocalTime():MM-dd HH:mm}" : "Analysed",
     };
     /// <summary>What running it would do.</summary>
     public string ActionLabel => Status switch

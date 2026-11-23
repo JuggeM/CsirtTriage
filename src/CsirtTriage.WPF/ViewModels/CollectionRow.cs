@@ -108,7 +108,7 @@ public sealed class CollectionRow : ViewModelBase
         OnPropertyChanged(nameof(StatusLabel));
     }
 
-    private static string FormatSize(long bytes) => bytes switch
+    public static string FormatSize(long bytes) => bytes switch
     {
         >= 1L << 30 => $"{bytes / (double)(1L << 30):N1} GB",
         >= 1L << 20 => $"{bytes / (double)(1L << 20):N1} MB",
