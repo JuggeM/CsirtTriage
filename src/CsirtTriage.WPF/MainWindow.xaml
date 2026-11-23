@@ -26,7 +26,7 @@
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                     <StackPanel>
                         <TextBlock Text="CsirtTriage" FontSize="14" FontWeight="SemiBold"/>
-                        <TextBlock Text="UAC and KAPE collections → findings" FontSize="11"
+                        <TextBlock Text="UAC, KAPE and M365 → findings" FontSize="11"
                                    Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"/>
                     </StackPanel>
                 </Border>

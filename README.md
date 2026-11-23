@@ -4,7 +4,7 @@ DFIR triage for Windows analysts, in one desktop app for **Linux/Unix collection
 
 It replaces [CsirtParser.WPF](https://github.com/JuggeM/CsirtParser.WPF) (UAC) and [KapeAnalyser.WPF](https://github.com/JuggeM/KapeAnalyser.WPF) (KAPE). The detections are the same; what is new is the shared case layer: one IOC list, one case summary and one case report for the whole incident, so SSH from a Windows host to a Linux server (or the other way round) shows up as lateral movement.
 
-![Collections table: UAC and KAPE collections in one case, ticked for the run, one waiting for the ORC script](docs/case.png)
+![Collections table: UAC, KAPE and M365 collections in one case, ticked for the run, one waiting for the ORC script](docs/case.png)
 
 ## Screenshots
 
