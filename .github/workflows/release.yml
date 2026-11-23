@@ -1,9 +1,19 @@
 name: Release
 
-# Push a tag such as v0.2.0 to build, test and publish CsirtTriage.exe as a GitHub release.
+# Build, test and publish CsirtTriage.exe as a GitHub release, either by pushing a tag
+# (git tag v0.2.0 && git push origin v0.2.0) or from the Actions tab: Release → Run workflow,
+# with the version (the tag is then created on the commit the workflow ran on).
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 0.2.0 (tag v0.2.0 is created)'
+        required: true
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
 
 permissions:
   contents: write
@@ -36,7 +46,7 @@ jobs:
       - name: Publish single-file exe
         shell: pwsh
         run: |
-          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $version = $env:TAG.TrimStart('v')
           dotnet publish src\CsirtTriage.WPF -c Release -r win-x64 --self-contained true `
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
             -p:EnableCompressionInSingleFile=true -p:DebugType=none -p:Version=$version -o publish -nologo
@@ -49,7 +59,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = '${{ github.ref_name }}'
+          $tag = $env:TAG
           $version = $tag.TrimStart('v')
           $zip = "CsirtTriage-$version-win-x64.zip"
           $exeHash = (Get-FileHash publish\CsirtTriage.exe -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -71,7 +81,7 @@ jobs:
           Set-Content notes.md $notes -Encoding utf8
           # v0.x is a pre-release until the app has been used on real cases
           $ghArgs = @('release', 'create', $tag, 'publish\CsirtTriage.exe', 'publish\rules.json', $zip,
-                      '--title', "CsirtTriage $version", '--notes-file', 'notes.md')
+                      '--title', "CsirtTriage $version", '--notes-file', 'notes.md', '--target', '${{ github.sha }}')
           if ($version.StartsWith('0.')) { $ghArgs += '--prerelease' }
           gh @ghArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
