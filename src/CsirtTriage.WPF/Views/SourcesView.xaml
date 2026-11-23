@@ -1,0 +1,89 @@
+<UserControl x:Class="CsirtTriage.WPF.Views.SourcesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <!-- One compact row per source: checkbox, name and files, then what it detects (always visible) -->
+        <DataTemplate x:Key="SourceRow">
+            <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,6">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <CheckBox IsChecked="{Binding IsEnabled}" VerticalAlignment="Top" Margin="0,2,10,0"/>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock>
+                            <Run Text="{Binding Name, Mode=OneWay}" FontWeight="Medium"/>
+                            <Run Text="   "/>
+                            <Run Text="{Binding Detail, Mode=OneWay}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </TextBlock>
+                        <TextBlock Text="{Binding Description}" FontSize="11" TextWrapping="Wrap" MaxHeight="30" TextTrimming="WordEllipsis"
+                                   Foreground="{StaticResource TextSecondaryBrush}" ToolTip="{Binding Description}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+        <Style x:Key="CategoryHeader" TargetType="GroupItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GroupItem">
+                        <StackPanel Margin="0,10,0,0">
+                            <TextBlock Text="{Binding Name}" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"/>
+                            <ItemsPresenter/>
+                        </StackPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <TextBlock Text="Sources" Style="{StaticResource SectionTitle}"/>
+        <TextBlock FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,14"
+                   Text="What each run analyses. Everything is on by default; switch a source off to skip it (for example to save time on a very large collection). The settings apply to every collection of that type."/>
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="24"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel>
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Content="All" Style="{StaticResource StandardButton}" Command="{Binding AllSourcesCommand}" CommandParameter="Uac" Margin="0,0,6,0"/>
+                        <Button Content="None" Style="{StaticResource StandardButton}" Command="{Binding NoSourcesCommand}" CommandParameter="Uac"/>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Linux / Unix (UAC)" FontWeight="SemiBold" FontSize="13"/>
+                        <TextBlock Text="Logs and artefacts in the extracted UAC collection" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                </DockPanel>
+                <ItemsControl ItemsSource="{Binding UacSources}" ItemTemplate="{StaticResource SourceRow}">
+                    <ItemsControl.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource CategoryHeader}"/>
+                    </ItemsControl.GroupStyle>
+                </ItemsControl>
+            </StackPanel>
+
+            <StackPanel Grid.Column="2">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button Content="All" Style="{StaticResource StandardButton}" Command="{Binding AllSourcesCommand}" CommandParameter="Kape" Margin="0,0,6,0"/>
+                        <Button Content="None" Style="{StaticResource StandardButton}" Command="{Binding NoSourcesCommand}" CommandParameter="Kape"/>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Windows (KAPE)" FontWeight="SemiBold" FontSize="13"/>
+                        <TextBlock Text="EZ Tools module output in Processed\, plus a few raw files" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    </StackPanel>
+                </DockPanel>
+                <ItemsControl ItemsSource="{Binding KapeSources}" ItemTemplate="{StaticResource SourceRow}">
+                    <ItemsControl.GroupStyle>
+                        <GroupStyle ContainerStyle="{StaticResource CategoryHeader}"/>
+                    </ItemsControl.GroupStyle>
+                </ItemsControl>
+            </StackPanel>
+        </Grid>
+    </StackPanel>
+</UserControl>

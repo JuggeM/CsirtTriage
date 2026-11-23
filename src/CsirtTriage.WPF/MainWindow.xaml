@@ -1,0 +1,105 @@
+<Window x:Class="CsirtTriage.WPF.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:CsirtTriage.WPF.ViewModels"
+        xmlns:views="clr-namespace:CsirtTriage.WPF.Views"
+        Title="CsirtTriage"
+        Height="760" Width="1180"
+        MinHeight="580" MinWidth="900"
+        WindowStartupLocation="CenterScreen"
+        Background="White">
+
+    <Window.DataContext>
+        <vm:MainViewModel/>
+    </Window.DataContext>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
+            <DockPanel>
+                <Border DockPanel.Dock="Top" Padding="14,16,14,14"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+                    <StackPanel>
+                        <TextBlock Text="CsirtTriage" FontSize="14" FontWeight="SemiBold"/>
+                        <TextBlock Text="UAC and KAPE collections → findings" FontSize="11"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Always visible: what the run will do, and the button -->
+                <Border DockPanel.Dock="Bottom" Padding="12" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+                    <StackPanel>
+                        <TextBlock Text="{Binding SelectionSummary}" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,8"/>
+                        <Button Content="{Binding RunButtonText}" Style="{StaticResource PrimaryButton}"
+                                Command="{Binding RunCommand}" Height="36"/>
+                        <Button Content="■  Cancel all" Style="{StaticResource StandardButton}" Margin="0,6,0,0"
+                                Command="{Binding CancelCommand}"
+                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVisibilityConverter}}"/>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Margin="0,8,0,0">
+                    <RadioButton Content="Case" Style="{StaticResource NavButton}" IsChecked="True"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Case"/>
+                    <RadioButton Content="Sources" Style="{StaticResource NavButton}"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Sources"/>
+                    <RadioButton Content="Settings" Style="{StaticResource NavButton}"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Settings"/>
+                    <RadioButton Content="IOCs" Style="{StaticResource NavButton}"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Iocs"/>
+                    <RadioButton Content="Run log" Style="{StaticResource NavButton}"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Run"/>
+                    <RadioButton Content="Findings" Style="{StaticResource NavButton}"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Findings"/>
+                    <RadioButton Content="Case report" Style="{StaticResource NavButton}"
+                                 Command="{Binding NavigateCommand}" CommandParameter="Report"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Panels with their own grids fill the window; the rest scroll -->
+        <ContentControl Grid.Column="1">
+            <ContentControl.Style>
+                <Style TargetType="ContentControl">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ActivePanel}" Value="Case">
+                            <Setter Property="Content"><Setter.Value><views:CaseView Margin="24,20"/></Setter.Value></Setter>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ActivePanel}" Value="Sources">
+                            <Setter Property="Content"><Setter.Value>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20"><views:SourcesView/></ScrollViewer>
+                            </Setter.Value></Setter>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ActivePanel}" Value="Settings">
+                            <Setter Property="Content"><Setter.Value>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20"><views:SettingsView/></ScrollViewer>
+                            </Setter.Value></Setter>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ActivePanel}" Value="Iocs">
+                            <Setter Property="Content"><Setter.Value>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20"><views:IocView/></ScrollViewer>
+                            </Setter.Value></Setter>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ActivePanel}" Value="Run">
+                            <Setter Property="Content"><Setter.Value><views:RunView Margin="24,20"/></Setter.Value></Setter>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ActivePanel}" Value="Findings">
+                            <Setter Property="Content"><Setter.Value><views:FindingsView Margin="24,20"/></Setter.Value></Setter>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding ActivePanel}" Value="Report">
+                            <Setter Property="Content"><Setter.Value>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20"><views:CaseReportView/></ScrollViewer>
+                            </Setter.Value></Setter>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ContentControl.Style>
+        </ContentControl>
+    </Grid>
+</Window>

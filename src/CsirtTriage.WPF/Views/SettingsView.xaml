@@ -1,0 +1,139 @@
+<UserControl x:Class="CsirtTriage.WPF.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="ListBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="AcceptsReturn" Value="True"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+            <Setter Property="FontFamily" Value="Consolas"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Height" Value="96"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+        <Style x:Key="Hint" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+        <Style x:Key="Number" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Width" Value="80"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <Style x:Key="Section" TargetType="Expander">
+            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="Padding" Value="18,8,0,4"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+        </Style>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <TextBlock Text="Settings" Style="{StaticResource SectionTitle}"/>
+
+        <!-- ── Run ─────────────────────────────────────────────── -->
+        <Expander Style="{StaticResource Section}" IsExpanded="True">
+            <Expander.Header><TextBlock Text="Run" FontWeight="SemiBold"/></Expander.Header>
+            <StackPanel>
+                <TextBlock Text="Collections analysed at the same time" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding MaxParallel, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="{Binding ParallelHint}" Style="{StaticResource Hint}"/>
+
+                <TextBlock Text="Archives extracted at the same time" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding MaxParallelExtractions, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="Extraction is limited by the disk; on one disk, 1 is usually fastest. Other collections keep analysing meanwhile." Style="{StaticResource Hint}"/>
+
+                <TextBlock Text="Date range for findings (optional, UTC, all collections)" Style="{StaticResource FieldLabel}"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                    <DatePicker SelectedDate="{Binding FilterFrom}" Width="160"/>
+                    <TextBlock Text="to" VerticalAlignment="Center" Margin="10,0"/>
+                    <DatePicker SelectedDate="{Binding FilterTo}" Width="160"/>
+                </StackPanel>
+                <TextBlock Text="Leave empty to keep every finding." Style="{StaticResource Hint}"/>
+            </StackPanel>
+        </Expander>
+
+        <!-- ── Linux / UAC ────────────────────────────────────── -->
+        <Expander Style="{StaticResource Section}">
+            <Expander.Header><TextBlock Text="Linux / Unix detection (UAC)" FontWeight="SemiBold"/></Expander.Header>
+            <StackPanel>
+                <TextBlock Text="SSH / login brute force: failed attempts from one source" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.Uac.BruteForceThreshold, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="Web brute force: requests per minute to a login page from one source" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.Uac.WebBruteForceRpm, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text=" " Style="{StaticResource Hint}"/>
+
+                <TextBlock Text="Rank 1 keywords — HIGH when a log line contains one (one per line)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Rank1KeywordsText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ListBox}"/>
+                <TextBlock Text="Rank 2 keywords — MEDIUM (one per line)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Rank2KeywordsText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ListBox}"/>
+                <TextBlock Text="Whitelist — log lines containing one of these are never flagged (one per line)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding UacWhitelistText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ListBox}"/>
+            </StackPanel>
+        </Expander>
+
+        <Expander Style="{StaticResource Section}">
+            <Expander.Header><TextBlock Text="Body file scoring (UAC)" FontWeight="SemiBold"/></Expander.Header>
+            <StackPanel>
+                <TextBlock Text="Which body file entries are flagged: each file gets a score (temp folder, hidden, executable, recent, keyword…)." Style="{StaticResource Hint}"/>
+                <TextBlock Text="Minimum score to flag" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.Uac.BodyFileMinScore, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="Recent: modified within this many days of the collection (adds to the score)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.Uac.BodyFileRecencyDays, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="Ignore files smaller than (bytes)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.Uac.BodyFileMinSizeBytes, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="At most this many findings per folder" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.Uac.BodyFileMaxFindingsFolder, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <CheckBox Content="Only flag files whose path contains a keyword below" IsChecked="{Binding Settings.Uac.BodyFileRequireKeyword}" Margin="0,8,0,12"/>
+                <TextBlock Text="Keywords (one per line)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding BodyFileKeywordsText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ListBox}"/>
+                <TextBlock Text="Path prefixes never flagged (one per line)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding BodyFileWhitelistText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ListBox}"/>
+            </StackPanel>
+        </Expander>
+
+        <!-- ── Windows / KAPE ─────────────────────────────────── -->
+        <Expander Style="{StaticResource Section}">
+            <Expander.Header><TextBlock Text="Windows detection (KAPE)" FontWeight="SemiBold"/></Expander.Header>
+            <StackPanel>
+                <TextBlock Text="Detection rules file — tools, staging folders, command-line and web patterns" Style="{StaticResource FieldLabel}"/>
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Text="{Binding RulesPathText, UpdateSourceTrigger=LostFocus}" Margin="0,0,8,0"
+                             ToolTip="Empty: rules.json next to CsirtTriage.exe"/>
+                    <Button Grid.Column="1" Content="Browse…" Style="{StaticResource StandardButton}" Command="{Binding BrowseRulesCommand}" Margin="0,0,6,0"/>
+                    <Button Grid.Column="2" Content="Edit" Style="{StaticResource StandardButton}" Command="{Binding OpenRulesCommand}" Margin="0,0,6,0"/>
+                    <Button Grid.Column="3" Content="Reload" Style="{StaticResource StandardButton}" Command="{Binding ReloadRulesCommand}"/>
+                </Grid>
+                <TextBlock Text="{Binding RulesStatus}" TextWrapping="Wrap" FontSize="11" Margin="0,0,0,12">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding RulesOk}" Value="False"><Setter Property="Foreground" Value="{StaticResource DangerBrush}"/></DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <TextBlock Text="Brute force: failed logons from one source" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.Kape.BruteForceThreshold, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="$MFT: only list lower-severity files created within this many days of the newest file (0 = all)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.Kape.FileSystemRecencyDays, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text=" " Style="{StaticResource Hint}"/>
+
+                <TextBlock Text="Extra keywords — HIGH in file names, paths and command lines (one per line)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding KapeKeywordsText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ListBox}"/>
+                <TextBlock Text="Path fragments never flagged (one per line)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding KapeWhitelistText, UpdateSourceTrigger=LostFocus}" Style="{StaticResource ListBox}"/>
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>
