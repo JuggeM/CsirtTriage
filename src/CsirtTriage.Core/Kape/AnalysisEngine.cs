@@ -26,16 +26,24 @@ public sealed class AnalysisEngine
     public static bool IsProcessed(string outputBase, string collection) =>
         File.Exists(Path.Combine(outputBase, collection, ProcessedMarkerFile));
 
-    public void RunAll(CancellationToken ct, IProgress<double>? progress = null)
+    /// <summary>
+    /// Loads rules.json. Call once before analysing; rules are read on every
+    /// run so edits take effect without restarting.
+    /// </summary>
+    public void LoadRules()
     {
-        // Rules are read on every run, so edits to rules.json take effect without restarting
         if (!RuleSet.TryLoad(_config.ResolveRulesPath(), out var rulesMessage))
         {
             _log($"[ERROR] Detection rules not loaded: {rulesMessage}");
             throw new InvalidOperationException("Detection rules not loaded: " + rulesMessage);
         }
         _log($"Rules: {rulesMessage}");
+    }
 
+    /// <summary>Every KAPE host in the case, one after another, then the case-wide steps.</summary>
+    public void RunAll(CancellationToken ct, IProgress<double>? progress = null)
+    {
+        LoadRules();
         var outputBase = _config.ResolveOutputPath();
         Directory.CreateDirectory(outputBase);
         _log($"Output: {outputBase}");
@@ -50,27 +58,32 @@ public sealed class AnalysisEngine
         for (int i = 0; i < hosts.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            var h = hosts[i];
-            var outDir = Path.Combine(outputBase, h.Name);
-
-            if (IsProcessed(outputBase, h.Name))
-            {
-                _log($"===== Skipping {h.Name}: already processed ({outDir}) =====");
-                progress?.Report((double)(i + 1) / hosts.Count);
-                continue;
-            }
-            if (Directory.Exists(outDir) && Directory.EnumerateFileSystemEntries(outDir).Any())
-            {
-                _log($"[WARN] [{h.Name}] Incomplete output from an earlier run — clearing and reprocessing.");
-                Directory.Delete(outDir, recursive: true);
-            }
-
-            ProcessHost(h, outDir, ct, p => progress?.Report((i + p) / hosts.Count));
-            File.WriteAllText(Path.Combine(outDir, ProcessedMarkerFile), $"Processed {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z{Environment.NewLine}");
+            if (IsProcessed(outputBase, hosts[i].Name))
+                _log($"===== Skipping {hosts[i].Name}: already processed =====");
+            else
+                AnalyseHost(hosts[i], ct, p => progress?.Report((i + p) / hosts.Count));
             progress?.Report((double)(i + 1) / hosts.Count);
         }
 
-        FinishCase(_config.CaseFolderPath, outputBase, _config.CaseName, _config.AnalystName, _config.SearchIocs, _log, ct);
+        Case.CaseFinisher.Finish(_config.CaseFolderPath, outputBase, _config.CaseName, _config.AnalystName, _log, ct, _config.SearchIocs);
+    }
+
+    /// <summary>
+    /// Analyses one KAPE host into Level2\&lt;host folder&gt;. Safe to run for
+    /// several hosts at once (one call per host; rules loaded beforehand).
+    /// Earlier output for the host is replaced; the .processed marker is
+    /// written last, so an interrupted run never looks finished.
+    /// </summary>
+    public void AnalyseHost(KapeHost host, CancellationToken ct, Action<double>? progress = null)
+    {
+        var outDir = Path.Combine(_config.ResolveOutputPath(), host.Name);
+        if (Directory.Exists(outDir) && Directory.EnumerateFileSystemEntries(outDir).Any())
+        {
+            _log($"[{host.Name}] Replacing earlier output.");
+            Directory.Delete(outDir, recursive: true);
+        }
+        ProcessHost(host, outDir, ct, progress ?? (_ => { }));
+        File.WriteAllText(Path.Combine(outDir, ProcessedMarkerFile), $"Processed {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z{Environment.NewLine}");
     }
 
     private void ProcessHost(KapeHost host, string outDir, CancellationToken ct, Action<double> progress)
@@ -118,13 +131,13 @@ public sealed class AnalysisEngine
         _log($"[{host.Name}] Hostname: {hostname}" + (ctx.HostIps.Count > 0 ? $"   IP(s): {string.Join(", ", ctx.HostIps)}" : ""));
 
         var modules = analysers.Select(a => (a.Source, a.Module, a.Enabled(_config))).ToList();
-        HostReport.Write(outDir, new HostReport.HostInfo(hostname, host.Name, host.RootPath, ctx.HostIps), ctx, modules,
+        HostReport.Write(outDir, new Case.CollectionInfo(hostname, host.Name, Case.CollectionKind.Kape, host.RootPath, "", ctx.HostIps.ToList()), ctx, modules,
             _config.CaseName, _config.AnalystName);
 
         int crit = ctx.Findings.Count(f => f.Severity == Severity.Critical), high = ctx.Findings.Count(f => f.Severity == Severity.High);
         _log($"[{host.Name}] {ctx.Findings.Count} finding(s): {crit} critical, {high} high — {sw.Elapsed:mm\\:ss}. QuickWins: {Path.Combine(outDir, HostReport.QuickWinsFile)}");
         try { QuickWinsRtf.Convert(outDir); }
-        catch (Exception ex) { _log($"[WARN] [{host.Name}] RTF conversion failed: {ex.Message} — QuickWins.txt is still available."); }
+        catch (Exception ex) { _log($"[WARN] [{host.Name}] RTF conversion failed: {ex.Message} — the text source is still available."); }
     }
 
     /// <summary>
@@ -196,62 +209,5 @@ public sealed class AnalysisEngine
         catch (IOException) { return path; }
         catch (UnauthorizedAccessException) { return path; }
         return $"{fi.Name}|{fi.Length}|{Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(head.AsSpan(0, n)))}";
-    }
-
-    /// <summary>
-    /// Case-wide steps that only read processed output, so they also run on
-    /// their own ("Search IOCs" in the IOC panel) without re-analysing.
-    /// </summary>
-    public static void FinishCase(string caseFolder, string outputBase, string caseName, string analyst,
-                                  bool searchIocs, Action<string> log, CancellationToken ct)
-    {
-        if (searchIocs)
-        {
-            var iocs = CaseIocs.Load(caseFolder);
-            if (iocs.Count > 0)
-            {
-                log($"IOC search: {iocs.Count} case IOC(s) across processed hosts…");
-                foreach (var dir in Directory.GetDirectories(outputBase))
-                {
-                    ct.ThrowIfCancellationRequested();
-                    var info = Path.Combine(dir, HostReport.HostInfoFile);
-                    if (!File.Exists(info)) continue;
-                    var kv = File.ReadAllLines(info).Select(l => l.Split('=', 2)).Where(p => p.Length == 2).ToDictionary(p => p[0], p => p[1]);
-                    var root = kv.GetValueOrDefault("KapeRoot", "");
-                    var host = kv.GetValueOrDefault("Hostname", Path.GetFileName(dir));
-                    if (!Directory.Exists(root)) { log($"[WARN] {host}: KAPE output folder no longer exists ({root}) — IOC search skipped."); continue; }
-                    try
-                    {
-                        var hits = IocSearch.SearchHost(root, iocs, log, ct);
-                        HostReport.WriteIocHits(dir, host, hits, iocs.Count);
-                        try { QuickWinsRtf.Convert(dir); } catch { /* .txt is still correct */ }
-                        log(hits.Count > 0 ? $"[WARN] {host}: {hits.Count} of {iocs.Count} case IOC(s) seen." : $"{host}: no case IOC hits.");
-                    }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex) { log($"[WARN] {host}: IOC search failed: {ex.Message}"); }
-                }
-            }
-        }
-
-        string? summary = null;
-        try
-        {
-            summary = CaseSummary.Write(outputBase, caseName, analyst);
-            if (summary != null) log($"Case summary written: {summary}");
-        }
-        catch (Exception ex) { log($"[WARN] Case summary failed: {ex.Message}"); }
-
-        if (summary == null) return;
-        var tracker = Path.Combine(outputBase, CaseTracker.FileName);
-        try
-        {
-            // Every critical and high finding as case tracker rows; the Case report panel exports the ticked ones
-            var data = CaseReport.Build(outputBase, caseName, analyst);
-            var rows = CaseTracker.Rows(data, data.Findings.Where(f => f.Rank <= 1));
-            CaseTracker.Write(tracker, rows);
-            log($"Case tracker rows ({rows.Count} critical/high) written: {tracker}");
-        }
-        catch (IOException ex) { log($"[WARN] {CaseTracker.FileName} not written — is it open in Excel? {ex.Message}"); }
-        catch (Exception ex) { log($"[WARN] {CaseTracker.FileName} not written: {ex.Message}"); }
     }
 }

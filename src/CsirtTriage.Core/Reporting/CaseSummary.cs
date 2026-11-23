@@ -62,7 +62,7 @@ public static class CaseSummary
 
         var sb = new StringBuilder();
         sb.AppendLine("==========================================================================");
-        sb.AppendLine(" KAPE Analyser — Case summary");
+        sb.AppendLine(" CsirtTriage — Case summary");
         sb.AppendLine($" Case: {caseName}   Analyst: {analyst}   Hosts: {hosts.Count}");
         sb.AppendLine($" Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC   All times UTC");
         sb.AppendLine("==========================================================================");

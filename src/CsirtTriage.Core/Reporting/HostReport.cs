@@ -7,21 +7,23 @@ namespace CsirtTriage.Core.Reporting;
 /// <summary>Writes one host's output: QuickWins.txt, Findings.csv, Logons.csv and host.txt.</summary>
 public static class HostReport
 {
-    public const string QuickWinsFile = "QuickWins.txt";
+    /// <summary>
+    /// Text source of QuickWins.rtf. Kept (hidden) so the IOC search can update
+    /// the report later without re-analysing; analysts read the .rtf.
+    /// </summary>
+    public const string QuickWinsFile = ".quickwins.txt";
     public const string FindingsFile = "Findings.csv";
     public const string LogonsFile = "Logons.csv";
     public const string SessionsFile = "Sessions.csv";
     public const int MaxSessions = 30;
-    public const string HostInfoFile = "host.txt";
+    public const string HostInfoFile = Case.CollectionInfo.FileName;
     public const string IocHitsFile = "IocHits.csv";
     public const int MaxPerSection = 300;
     public const int MaxKeyFindings = 30;
 
     private static readonly UTF8Encoding Utf8 = new(false);
 
-    public sealed record HostInfo(string Hostname, string Collection, string KapeRoot, IReadOnlyCollection<string> Ips);
-
-    public static void Write(string outDir, HostInfo host, AnalysisContext ctx,
+    public static void Write(string outDir, Case.CollectionInfo host, AnalysisContext ctx,
                              IReadOnlyList<(string Source, string Module, bool Enabled)> modules,
                              string caseName, string analyst)
     {
@@ -29,8 +31,7 @@ public static class HostReport
         var findings = ctx.Findings
             .OrderBy(f => f.Severity).ThenBy(f => f.TimeUtc ?? DateTime.MaxValue).ToList();
 
-        File.WriteAllText(Path.Combine(outDir, HostInfoFile),
-            $"Hostname={host.Hostname}\nCollection={host.Collection}\nKapeRoot={host.KapeRoot}\nIPs={string.Join(",", host.Ips)}\n", Utf8);
+        host.Write(outDir);
 
         WriteFindingsCsv(Path.Combine(outDir, FindingsFile), host.Hostname, findings);
         WriteLogonsCsv(Path.Combine(outDir, LogonsFile), host.Hostname, ctx.Logons.Values);
@@ -39,14 +40,14 @@ public static class HostReport
     }
 
     // ── QuickWins.txt ────────────────────────────────────────────────
-    private static string BuildQuickWins(HostInfo host, AnalysisContext ctx, List<Finding> findings,
+    private static string BuildQuickWins(Case.CollectionInfo host, AnalysisContext ctx, List<Finding> findings,
         IReadOnlyList<(string Source, string Module, bool Enabled)> modules, string caseName, string analyst)
     {
         // Same sections and line formats as CsirtParser's QuickWins.txt, so both
         // tools read alike and QuickWinsRtf can lay the file out as tables.
         var sb = new StringBuilder();
         sb.AppendLine("##########################################");
-        sb.AppendLine("# Quick Wins - KAPE Analyser");
+        sb.AppendLine("# Quick Wins - CsirtTriage (KAPE)");
         sb.AppendLine($"# Generated on {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
         sb.AppendLine("##########################################");
 
@@ -68,7 +69,7 @@ public static class HostReport
             sb.AppendLine($"  Date filter: findings from {ctx.Config.FilterFrom:yyyy-MM-dd} to {ctx.Config.FilterTo:yyyy-MM-dd}");
         if (caseName.Length > 0) sb.AppendLine($"  Case:       {caseName}");
         if (analyst.Length > 0) sb.AppendLine($"  Analyst:    {analyst}");
-        sb.AppendLine($"  KAPE output: {host.KapeRoot}");
+        sb.AppendLine($"  KAPE output: {host.SourceRoot}");
         sb.AppendLine();
 
         // KEY FINDINGS
@@ -201,7 +202,7 @@ public static class HostReport
     public static readonly string[] FindingsHeader =
         { "TimeUtc", "LastUtc", "Host", "Severity", "Source", "Category", "Count", "Text", "Detail", "Artifact" };
 
-    private static void WriteFindingsCsv(string path, string host, List<Finding> findings)
+    public static void WriteFindingsCsv(string path, string host, List<Finding> findings)
     {
         using var w = new StreamWriter(path, false, Utf8);
         w.WriteLine(string.Join(",", FindingsHeader));
@@ -210,7 +211,7 @@ public static class HostReport
                 f.Count.ToString(CultureInfo.InvariantCulture), f.Text, f.Detail, f.Artifact));
     }
 
-    private static void WriteLogonsCsv(string path, string host, IEnumerable<LogonRecord> logons)
+    public static void WriteLogonsCsv(string path, string host, IEnumerable<LogonRecord> logons)
     {
         using var w = new StreamWriter(path, false, Utf8);
         w.WriteLine("Host,User,LogonType,SourceHost,SourceIp,Via,Count,First,Last");
@@ -219,7 +220,7 @@ public static class HostReport
                 l.Count.ToString(CultureInfo.InvariantCulture), Iso(l.First), Iso(l.Last)));
     }
 
-    private static void WriteSessionsCsv(string path, string host, IEnumerable<LogonSession> sessions)
+    public static void WriteSessionsCsv(string path, string host, IEnumerable<LogonSession> sessions)
     {
         using var w = new StreamWriter(path, false, Utf8);
         w.WriteLine("Host,User,LogonType,SourceHost,SourceIp,Start,End,DurationMinutes,EndedBy,Id,Via");
@@ -234,15 +235,21 @@ public static class HostReport
     // ── IOC hits block (inserted after the banner, replaced on re-search) ──
     public const string IocSectionTitle = "CASE IOC HITS (analyst IOC list, iocs.txt)";
 
-    public static void WriteIocHits(string outDir, string host, List<IocHit> hits, int iocCount)
+    /// <summary>
+    /// Writes IocHits.csv and the CASE IOC HITS block at the top of the QuickWins
+    /// source. With an empty IOC list, earlier hits and the block are removed.
+    /// </summary>
+    public static void WriteIocHits(string outDir, string host, IReadOnlyList<IocHit> hits, IReadOnlyList<Ioc> iocs)
     {
         var csvPath = Path.Combine(outDir, IocHitsFile);
-        using (var w = new StreamWriter(csvPath, false, Utf8))
+        if (iocs.Count == 0) { try { File.Delete(csvPath); } catch (IOException) { } }
+        else
         {
+            using var w = new StreamWriter(csvPath, false, Utf8);
             w.WriteLine("Host,Type,Ioc,Comment,Hits,First,Last,Sources,Sample");
             foreach (var h in hits)
-                w.WriteLine(Csv.Row(host, h.Ioc.Type, h.Ioc.Value, h.Ioc.Comment, h.Count.ToString(CultureInfo.InvariantCulture),
-                    Iso(h.First), Iso(h.Last), string.Join(" ", h.Sources), h.Sample));
+                w.WriteLine(Csv.Row(host, h.Ioc.Kind, h.Ioc.Value, h.Ioc.Comment, h.Count.ToString(CultureInfo.InvariantCulture),
+                    Iso(h.First), Iso(h.Last), string.Join(" ", h.Sources), string.Join(" ; ", h.Samples)));
         }
 
         var qw = Path.Combine(outDir, QuickWinsFile);
@@ -257,19 +264,29 @@ public static class HostReport
             lines.RemoveRange(start, (end < 0 ? lines.Count : end) - start);
         }
 
-        var block = new List<string> { $"########## {IocSectionTitle} ##########" };
-        if (hits.Count == 0) block.Add($"  None of the {iocCount} case IOC(s) seen on this host.");
-        else
+        if (iocs.Count > 0)
         {
-            block.Add($"  {hits.Count} of {iocCount} case IOC(s) seen on this host — treat as CRITICAL until explained.");
-            foreach (var h in hits)
-                block.Add($"  [CRITICAL] {h.Ioc.Type,-7} {h.Ioc.Value,-40} {h.Count,5} hit(s)  {Fmt(h.First)} → {Fmt(h.Last)}  in {string.Join(", ", h.Sources)}" +
-                          (h.Ioc.Comment.Length > 0 ? $"  # {h.Ioc.Comment}" : ""));
+            var block = new List<string> { $"########## {IocSectionTitle} ##########" };
+            if (hits.Count == 0) block.Add($"  None of the {iocs.Count} case IOC(s) were seen in this collection ({CaseIocs.Summary(iocs)}).");
+            else
+            {
+                block.Add($"  {hits.Count} of {iocs.Count} case IOC(s) seen on this host — treat as CRITICAL until explained. Detail: {IocHitsFile}");
+                foreach (var h in hits)
+                {
+                    block.Add($"  [CRITICAL] {h.Ioc.Kind,-7} {h.Ioc.Value,-40} {h.Count,5} hit(s)  {Fmt(h.First)} → {Fmt(h.Last)}  in {string.Join(", ", h.Sources)}" +
+                              (h.Ioc.Comment.Length > 0 ? $"  # {h.Ioc.Comment}" : ""));
+                    foreach (var sample in h.Samples) block.Add($"        e.g. {sample}");
+                }
+                var notSeen = iocs.Where(i => hits.All(h => !Equals(h.Ioc, i))).ToList();
+                if (notSeen.Count > 0)
+                    block.Add($"  Not seen ({notSeen.Count}): {string.Join(", ", notSeen.Take(15).Select(i => i.Value))}{(notSeen.Count > 15 ? ", …" : "")}");
+            }
+            block.Add("");
+            // After the timeline header, before the host block (same place for UAC and KAPE reports)
+            int insertAt = lines.FindIndex(l => l.StartsWith("########## HOST", StringComparison.Ordinal)
+                                             || l.StartsWith("########## KEY FINDINGS", StringComparison.Ordinal));
+            lines.InsertRange(insertAt < 0 ? 0 : insertAt, block);
         }
-        block.Add("");
-
-        int insertAt = lines.FindIndex(l => l.StartsWith("########## HOST", StringComparison.Ordinal));
-        lines.InsertRange(insertAt < 0 ? 0 : insertAt, block);
         File.WriteAllLines(qw, lines, Utf8);
     }
 }

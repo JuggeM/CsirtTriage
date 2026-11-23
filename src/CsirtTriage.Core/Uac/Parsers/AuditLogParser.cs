@@ -160,23 +160,18 @@ namespace CsirtTriage.Core.Uac.Parsers
             var authFailures = new Dictionary<string, (int Count, DateTime Last)>(
                 StringComparer.OrdinalIgnoreCase);
 
-            // CSV output path — append so multiple files accumulate
-            string? csvPath = string.IsNullOrEmpty(outputDir)
-                ? null
-                : Path.Combine(outputDir, "Audit_Parsed.csv");
-            StreamWriter? csvWriter = null;
+            // Every audit line goes to Normalized_AUDIT.csv (it replaces the
+            // separate Audit_Parsed.csv): Severity High = critical tier, Low =
+            // counted noise, Info = routine.
+            void Normalized(DateTime ts, string type, string tier, string msg, string line) =>
+                _normalizedWriter?.Write(NormalizedRecord.From(
+                    ts, string.Empty, "AUDIT",
+                    type, string.Empty, string.Empty,
+                    msg.Length > 200 ? msg.Substring(0, 200) : msg,
+                    tier switch { "Critical" => "High", "Noise" => "Low", _ => "Info" },
+                    line));
 
-            try
             {
-                if (csvPath != null)
-                {
-                    bool writeHeader = !File.Exists(csvPath);
-                    csvWriter = new StreamWriter(csvPath, append: true);
-                    if (writeHeader)
-                        csvWriter.WriteLine(
-                            "TimestampUtc,EventType,Tier,IsSuspicious,NormalizedMessage,RawMessage");
-                }
-
                 foreach (var line in ReadAllLines(logFilePath))
                 {
                     var m = AuditLine.Match(line);
@@ -198,8 +193,7 @@ namespace CsirtTriage.Core.Uac.Parsers
                     if (tier == "Info")
                     {
                         // Write to CSV but don't count
-                        WriteNormalizedRow(csvWriter, ts, type, "Info", false,
-                            NormalizeMsg(msg), line);
+                        Normalized(ts, type, tier, msg, line);
                         continue;
                     }
 
@@ -252,21 +246,8 @@ namespace CsirtTriage.Core.Uac.Parsers
                                 msg.Length > 160 ? msg.Substring(0, 157) + "..." : msg);
                     }
 
-                    bool isSusp = tier == "Critical";
-                    WriteNormalizedRow(csvWriter, ts, type,
-                        tier, isSusp, NormalizeMsg(msg), line);
-
-                    _normalizedWriter?.Write(NormalizedRecord.From(
-                        ts, string.Empty, "AUDIT",
-                        type, string.Empty, string.Empty,
-                        msg.Length > 200 ? msg.Substring(0, 200) : msg,
-                        isSusp ? "High" : "Info",
-                        line));
+                    Normalized(ts, type, tier, msg, line);
                 }
-            }
-            finally
-            {
-                csvWriter?.Dispose();
             }
 
             // Emit findings — Critical groups sorted by severity then count
@@ -304,22 +285,6 @@ namespace CsirtTriage.Core.Uac.Parsers
                     interestingIPs: null, suppressFooter: true);
 
             return (findings, patterns, first, last);
-        }
-
-        // ── CSV helpers ───────────────────────────────────────────────
-        private static void WriteNormalizedRow(StreamWriter? w, DateTime ts,
-            string type, string tier, bool suspicious, string normalized, string raw)
-        {
-            if (w == null) return;
-            static string Q(string s) => "\"" + (s ?? "").Replace("\"", "\"\"") + "\"";
-            w.WriteLine(string.Join(",",
-                Q(ts == DateTime.MinValue ? "" : ts.ToString("yyyy-MM-dd HH:mm:ss")),
-                Q(type),
-                Q(tier),
-                Q(suspicious ? "true" : "false"),
-                Q(normalized),
-                Q(raw.Length > 300 ? raw.Substring(0, 297) + "..." : raw)
-            ));
         }
 
         // ── Timestamp ─────────────────────────────────────────────────

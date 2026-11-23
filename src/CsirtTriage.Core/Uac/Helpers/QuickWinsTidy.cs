@@ -22,7 +22,7 @@ namespace CsirtTriage.Core.Uac
         /// </summary>
         public static void CollapseCronDuplicates(string outputDir, int minRepeatToCollapse = 2)
         {
-            var quickWinsPath = Path.Combine(outputDir, "QuickWins.txt");
+            var quickWinsPath = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
             if (!File.Exists(quickWinsPath)) return;
 
             var lines = File.ReadAllLines(quickWinsPath).ToList();

@@ -1,19 +1,19 @@
 <#
 .SYNOPSIS
     Builds a synthetic UAC case folder for testing the two per-collection checks:
-      1. already extracted from Upload\ into Decompressed\
-      2. already processed and saved to Processed\ (.processed marker)
+      1. already extracted from Uploads\ into Decompressed\
+      2. already analysed into Level2\ (.processed marker)
 
 .DESCRIPTION
     Every collection gets a small UAC-like tree (auth.log, syslog, journal, hostname,
-    timedatectl, ps, bodyfile, bash_history) and a .tar.gz in Upload\.
+    timedatectl, ps, bodyfile, bash_history) and a .tar.gz in Uploads\.
     The case is pre-seeded so each collection exercises one scenario:
 
       uac-web01-linux-20261101   Archive only                      -> extract + process
       uac-db01-linux-20261102    Already extracted                 -> "Already extracted", process
       uac-app01-linux-20261103   Empty folder + stale _partial_    -> re-extract, process
-      uac-mail01-linux-20261104  Extracted + Processed with marker -> skipped (scan label + log)
-      uac-file01-linux-20261105  Extracted + Processed, no marker  -> output cleared + reprocessed
+      uac-mail01-linux-20261104  Extracted + analysed with marker  -> skipped (status "Analysed")
+      uac-file01-linux-20261105  Extracted + interrupted run       -> earlier output replaced
       uac-broken-linux-20261106  Corrupt archive                   -> error, no folder left behind
 
     Each collection also has two binary systemd journals (active + archived)
@@ -48,9 +48,10 @@ if (Test-Path $Path) {
     [IO.Directory]::Delete($(if ($IsWindows -or $null -eq $IsWindows) { '\\?\' + $full } else { $full }), $true)
 }
 
-$upload     = Join-Path $Path 'Upload'
+$upload     = Join-Path $Path 'Uploads'
 $decomp     = Join-Path $Path 'Decompressed'
 $processed  = Join-Path $Path 'Processed'
+$level2     = Join-Path $Path 'Level2'
 $staging    = Join-Path ([IO.Path]::GetTempPath()) ('csirt_testcase_' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $upload, $staging | Out-Null
 
@@ -557,14 +558,15 @@ Write-LfFile (Join-Path $stale 'auth.log') @('TRUNCATED - stale partial extracti
 
 # mail01: extracted + fully processed (marker) -> skipped
 Copy-Extracted $src['uac-mail01-linux-20261104'] 'uac-mail01-linux-20261104'
-$mailOut = Join-Path $processed 'uac-mail01-linux-20261104'
-Write-LfFile (Join-Path $mailOut 'QuickWins.txt') @('Pre-existing output from an earlier complete run - must be left untouched.')
+$mailOut = Join-Path $level2 'uac-mail01-linux-20261104'
+Write-LfFile (Join-Path $mailOut 'Findings.csv') @('Pre-existing output from an earlier complete run - must be left untouched.')
 Write-LfFile (Join-Path $mailOut '.processed') @('Processed 2026-11-10 08:00:00Z')
 
 # file01: extracted + interrupted run (no marker) -> cleared and reprocessed
 Copy-Extracted $src['uac-file01-linux-20261105'] 'uac-file01-linux-20261105'
 $fileOut = Join-Path $processed 'uac-file01-linux-20261105'
 Write-LfFile (Join-Path $fileOut 'Normalized_AUTH_LOG.csv') @('STALE-ROW-FROM-INTERRUPTED-RUN - must not survive reprocessing')
+Write-LfFile (Join-Path (Join-Path $level2 'uac-file01-linux-20261105') 'Findings.csv') @('STALE-ROW-FROM-INTERRUPTED-RUN')
 
 # broken: corrupt archive -> extraction error, no folder left behind
 [IO.File]::WriteAllBytes((Join-Path $upload 'uac-broken-linux-20261106.tar.gz'), [byte[]]((0x1f,0x8b,0x08,0x00) + (1..200)))
@@ -573,14 +575,10 @@ Write-LfFile (Join-Path $fileOut 'Normalized_AUTH_LOG.csv') @('STALE-ROW-FROM-IN
 
 Write-Host "Test case created: $Path"
 Write-Host ''
-Write-Host 'Expected on Scan:'
-Write-Host '  web01   extracted now'
-Write-Host '  db01    "Already extracted"'
-Write-Host '  app01   re-extracted (empty folder), _partial_ folder gone'
-Write-Host '  mail01  listed "(already processed - will be skipped)"'
-Write-Host '  file01  listed normally'
-Write-Host '  broken  [ERROR] in list, no Decompressed\uac-broken* or _partial_ folder'
-Write-Host 'Expected on Run:'
-Write-Host '  mail01  "Skipping ... already processed", QuickWins.txt unchanged'
-Write-Host '  file01  "[WARN] Incomplete output ... clearing", STALE-ROW gone'
-Write-Host '  all others get .processed; a second Run skips everything'
+Write-Host 'Expected:'
+Write-Host '  web01   extracted, analysed'
+Write-Host '  db01    already extracted, analysed'
+Write-Host '  app01   re-extracted (empty folder), _partial_ folder gone, analysed'
+Write-Host '  mail01  skipped: already analysed (Level2 marker), its output left untouched'
+Write-Host '  file01  earlier output replaced, STALE-ROW gone'
+Write-Host '  broken  extraction error, no Decompressed\uac-broken* or _partial_ folder'

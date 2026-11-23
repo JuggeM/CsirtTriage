@@ -28,8 +28,8 @@ public class ParserOrchestrator
 
     // Host UTC offset for the collection currently being processed, resolved
     // once at the top of ProcessLogs() and pushed onto every LogFileParser
-    // instance created for that collection. RunAll() processes collections
-    // sequentially, so a single field is safe here.
+    // instance created for that collection. One orchestrator handles one
+    // collection at a time; run collections in parallel with one instance each.
     private TimeSpan? _currentHostUtcOffset;
     private string _currentHostname = string.Empty;
 
@@ -38,7 +38,9 @@ public class ParserOrchestrator
     private readonly List<(string Source, string Finding)> _collectedFindings = new();
     private readonly List<CoverageTable.SourceInfo> _sourceInfos = new();
     private readonly Dictionary<string, Dictionary<string, int>> _patternsBySource = new();
-    private bool _liveResponseWritten;
+    // Processed\<collection>: the normalised CSVs (parsed data, level 1).
+    // Everything else for the collection goes to Level2\<collection>.
+    private string _processedDir = string.Empty;
 
     public ParserOrchestrator(ParserConfig config, Action<string> log)
     {
@@ -46,208 +48,96 @@ public class ParserOrchestrator
         _log = log;
     }
 
-    // ── Public entry point ───────────────────────────────────────────
+    // ── Public entry points ──────────────────────────────────────────
+    /// <summary>Every UAC collection in Decompressed\, one after another, then the case-wide steps.</summary>
     public void RunAll(CancellationToken ct = default, IProgress<double>? progress = null)
     {
-        var decompressDir = Path.Combine(_config.CaseFolderPath, "Decompressed");
         var outputBase = _config.ResolveOutputPath();
         _log($"Output: {outputBase}");
-
         Directory.CreateDirectory(outputBase);
 
-        // Find all collection root paths under Decompressed\
-        var collections = BuildCollectionMap(decompressDir);
-
+        var collections = FindCollections(Path.Combine(_config.CaseFolderPath, "Decompressed")).ToList();
         if (collections.Count == 0)
-        {
             _log("[WARN] No UAC collections found under Decompressed\\.");
-            return;
-        }
 
-        var collectionList = collections.ToList();
-        int total = collectionList.Count;
-
-        for (int i = 0; i < total; i++)
+        for (int i = 0; i < collections.Count; i++)
         {
             ct.ThrowIfCancellationRequested();
-
-            var (collectionName, rootPath) = collectionList[i];
-            var outputDir = Path.Combine(outputBase, collectionName);
-
-            // Check 2: already processed and saved to Processed\ ?
+            var (collectionName, rootPath) = collections[i];
             if (IsCollectionProcessed(outputBase, collectionName))
-            {
-                _log($"===== Skipping {collectionName}: already processed ({outputDir}) =====");
-                progress?.Report((double)(i + 1) / total);
-                continue;
-            }
-
-            // Output without a completion marker comes from an interrupted or
-            // failed run. Several writers append to existing files, so
-            // processing on top of it would duplicate rows — start clean.
-            if (Directory.Exists(outputDir) && Directory.EnumerateFileSystemEntries(outputDir).Any())
-            {
-                _log($"[WARN] [{collectionName}] Incomplete output from an earlier run — clearing and reprocessing.");
-                Directory.Delete(outputDir, recursive: true);
-            }
-            Directory.CreateDirectory(outputDir);
-
-            _log($"===== Collection: {collectionName} =====");
-            _collectedFindings.Clear();
-            _sourceInfos.Clear();
-            _patternsBySource.Clear();
-            _liveResponseWritten = false;
-            _currentHostname = string.Empty;
-            _currentHostUtcOffset = null;
-
-            if (_config.ParseAuth || _config.ParseCrontab || _config.ParseMessages
-                || _config.ParseSyslog || _config.ParseWebLogs || _config.ParseDocker
-                || _config.ParseAudit || _config.ParseLiveResponse || _config.ParseJournal)
-            {
-                ct.ThrowIfCancellationRequested();
-                ProcessLogs(collectionName, rootPath, outputDir);
-            }
-
-            // Skipped when ProcessLogs already wrote the live response report
-            // (it used to be written twice into the same file).
-            if (!_liveResponseWritten
-                && (_config.ParseProcess || _config.ParseNetwork || _config.ParsePersistence
-                    || _config.ParseFileSystem))
-            {
-                ct.ThrowIfCancellationRequested();
-                var lrPath = Directory.EnumerateDirectories(
-                    rootPath, "live_response", SearchOption.AllDirectories).FirstOrDefault();
-
-                if (!string.IsNullOrEmpty(lrPath) && Directory.Exists(lrPath))
-                {
-                    try
-                    {
-                        var lrOutDir = Path.Combine(outputDir, "LiveResponse");
-                        Directory.CreateDirectory(lrOutDir);
-                        WriteLiveResponse(lrPath, lrOutDir);
-                    }
-                    catch (Exception ex)
-                    {
-                        _log($"[ERROR] LiveResponse: {ex.Message}");
-                    }
-                }
-            }
-
-            if (_config.ParseAuth || _config.ParseCrontab || _config.ParseMessages
-                || _config.ParseSyslog || _config.ParseWebLogs || _config.ParseAudit)
-            {
-                if (_config.ParseBodyFile)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    ProcessBodyFile(collectionName, rootPath, outputDir);
-                }
-            }
-
-            // Analyst summary at the top of QuickWins.txt — built last so it
-            // covers every source, including the body file.
-            if (_config.OutputQuickWins)
-            {
-                try { WriteKeyFindings(collectionName, rootPath, outputDir); }
-                catch (Exception ex) { _log($"[WARN] [{collectionName}] Key findings block failed: {ex.Message}"); }
-            }
-
-            _log($"===== Done: {collectionName} =====");
-
-            // Convert QuickWins.txt → QuickWins.rtf for formatted output
-            if (_config.OutputQuickWins)
-            {
-                try
-                {
-                    QuickWinsRtfConverter.Convert(outputDir);
-                    _log($"[{collectionName}] QuickWins.rtf written.");
-                }
-                catch (Exception ex)
-                {
-                    _log($"[WARN] RTF conversion failed: {ex.Message} — QuickWins.txt is still available.");
-                }
-            }
-
-            // Written last: its presence means every step for this collection
-            // finished. A cancelled run throws before reaching this point.
-            File.WriteAllText(Path.Combine(outputDir, ProcessedMarkerFile),
-                $"Processed {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z{Environment.NewLine}");
-
-            // Report progress as fraction of collections completed
-            progress?.Report((double)(i + 1) / total);
+                _log($"===== Skipping {collectionName}: already processed =====");
+            else
+                AnalyseCollection(collectionName, rootPath, ct);
+            progress?.Report((double)(i + 1) / collections.Count);
         }
 
-        // Case IOC search + case-level summary across every collection in the
-        // output folder (including ones skipped above as already processed).
-        FinishCase(_config.CaseFolderPath, outputBase, _config.CaseName, _config.AnalystName, _log);
+        Case.CaseFinisher.Finish(_config.CaseFolderPath, outputBase, _config.CaseName, _config.AnalystName, _log, ct);
     }
 
     /// <summary>
-    /// Case-wide steps that only read processed output, so they can also run
-    /// on their own ("Search IOCs" in the IOC panel) without re-parsing:
-    /// IOC list search, QuickWins.rtf refresh, CaseSummary.txt and
-    /// iocs_discovered.txt.
+    /// Parses and analyses one extracted UAC collection: normalised CSVs to
+    /// Processed\&lt;collection&gt;, analysis results to Level2\&lt;collection&gt;.
+    /// Earlier output for the collection is replaced (several writers append,
+    /// so processing on top of it would duplicate rows). The .processed
+    /// marker is written last, so an interrupted run never looks finished.
     /// </summary>
-    public static IocSearch.CaseResult? FinishCase(string caseFolder, string outputBase,
-                                                   string caseName, string analyst, Action<string> log)
+    public void AnalyseCollection(string collectionName, string rootPath, CancellationToken ct = default)
     {
-        IocSearch.CaseResult? result = null;
-        try
-        {
-            result = IocSearch.SearchCase(caseFolder, outputBase, log);
-            if (result.IocCount > 0)
+        var outputDir = Path.Combine(_config.ResolveOutputPath(), collectionName);
+        _processedDir = Path.Combine(_config.CaseFolderPath, "Processed", collectionName);
+        foreach (var dir in new[] { outputDir, _processedDir })
+            if (Directory.Exists(dir) && Directory.EnumerateFileSystemEntries(dir).Any())
             {
-                log($"IOC search: {result.IocsHit} of {result.IocCount} case IOC(s) seen, on " +
-                    $"{result.CollectionsWithHits} of {result.CollectionsSearched} collection(s).");
-                foreach (var dir in Directory.GetDirectories(outputBase))
-                    if (File.Exists(Path.Combine(dir, IocSearch.HitsFileName)))
-                        try { QuickWinsRtfConverter.Convert(dir); } catch { /* .txt is still correct */ }
+                _log($"[{collectionName}] Replacing earlier output in {dir}");
+                Directory.Delete(dir, recursive: true);
             }
-        }
-        catch (Exception ex)
+        Directory.CreateDirectory(outputDir);
+        Directory.CreateDirectory(_processedDir);
+
+        _log($"===== Collection: {collectionName} =====");
+        _collectedFindings.Clear();
+        _sourceInfos.Clear();
+        _patternsBySource.Clear();
+        _currentHostname = string.Empty;
+        _currentHostUtcOffset = null;
+
+        if (_config.ParseAuth || _config.ParseCrontab || _config.ParseMessages
+            || _config.ParseSyslog || _config.ParseWebLogs || _config.ParseDocker
+            || _config.ParseAudit || _config.ParseLiveResponse || _config.ParseJournal)
         {
-            log($"[WARN] IOC search failed: {ex.Message}");
+            ct.ThrowIfCancellationRequested();
+            ProcessLogs(collectionName, rootPath, outputDir);
         }
 
-        string? summary = null;
-        try
+        if (_config.ParseBodyFile)
         {
-            summary = CaseSummary.Write(outputBase, caseName, analyst);
-            if (summary != null) log($"Case summary written: {summary}");
-        }
-        catch (Exception ex)
-        {
-            log($"[WARN] Case summary failed: {ex.Message}");
+            ct.ThrowIfCancellationRequested();
+            ProcessBodyFile(collectionName, rootPath, outputDir);
         }
 
-        if (summary != null)
-        {
-            // Every critical and high finding as case tracker rows; the Case report panel exports the ticked ones
-            var tracker = Path.Combine(outputBase, CaseTracker.FileName);
-            try
-            {
-                var data = CaseReport.Build(outputBase, caseName, analyst);
-                var rows = CaseTracker.Rows(data, data.Findings.Where(f => f.Rank <= 1));
-                CaseTracker.Write(tracker, rows);
-                log($"Case tracker rows ({rows.Count} critical/high) written: {tracker}");
-            }
-            catch (IOException ex) { log($"[WARN] {CaseTracker.FileName} not written — is it open in Excel? {ex.Message}"); }
-            catch (Exception ex) { log($"[WARN] {CaseTracker.FileName} not written: {ex.Message}"); }
-        }
+        // Analyst summary at the top of QuickWins — built last so it covers
+        // every source, including the body file. Also writes Findings.csv and
+        // host.txt, which the case-wide steps read.
+        ct.ThrowIfCancellationRequested();
+        WriteKeyFindings(collectionName, rootPath, outputDir);
+        _log($"===== Done: {collectionName} =====");
 
         try
         {
-            int n = IocSearch.WriteDiscovered(caseFolder, outputBase);
-            if (n > 0) log($"{n} discovered IOC(s) not yet in the case IOC list: {Path.Combine(outputBase, CaseIocs.DiscoveredFileName)}");
+            QuickWinsRtfConverter.Convert(outputDir);
+            _log($"[{collectionName}] QuickWins.rtf written.");
         }
         catch (Exception ex)
         {
-            log($"[WARN] Discovered IOC list failed: {ex.Message}");
+            _log($"[WARN] [{collectionName}] RTF conversion failed: {ex.Message}");
         }
-        return result;
+
+        File.WriteAllText(Path.Combine(outputDir, ProcessedMarkerFile),
+            $"Processed {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z{Environment.NewLine}");
     }
 
     // ── Processed-state check ────────────────────────────────────────
-    /// <summary>Marker written to Processed\&lt;collection&gt;\ once all parsing is done.</summary>
+    /// <summary>Marker written to Level2\&lt;collection&gt;\ once all parsing is done.</summary>
     public const string ProcessedMarkerFile = ".processed";
 
     /// <summary>
@@ -260,7 +150,8 @@ public class ParserOrchestrator
         && File.Exists(Path.Combine(outputBase, collectionName, ProcessedMarkerFile));
 
     // ── Collection discovery ─────────────────────────────────────────
-    private static Dictionary<string, string> BuildCollectionMap(string decompressDir)
+    /// <summary>Extracted UAC collections in Decompressed\: name → collection root.</summary>
+    public static Dictionary<string, string> FindCollections(string decompressDir)
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -324,7 +215,7 @@ public class ParserOrchestrator
 
         void Parse(string baseName, LogFileParser parser, string label)
         {
-            var csvPath = Path.Combine(outputDir, $"Normalized_{label}.csv");
+            var csvPath = Path.Combine(_processedDir, $"Normalized_{label}.csv");
             using var csv = CreateCsv(csvPath, append: false);
             TryAttach(parser, sessionTracker);
             TryAttach(parser, csv);
@@ -363,7 +254,7 @@ public class ParserOrchestrator
         if (_config.ParseWebLogs)
         {
             using var webCsv = CreateCsv(
-                Path.Combine(outputDir, "Normalized_WEB.csv"), append: false);
+                Path.Combine(_processedDir, "Normalized_WEB.csv"), append: false);
             var webParser = new WebLogParser();
             var webBfd = new WebBruteForceDetector();  // shared across all web files
             TryAttach(webParser, webCsv);
@@ -384,7 +275,7 @@ public class ParserOrchestrator
             {
                 _log($"[{collectionName}] Parsing Docker containers…");
                 using var dockerCsv = CreateCsv(
-                    Path.Combine(outputDir, "Normalized_DOCKER.csv"), append: false);
+                    Path.Combine(_processedDir, "Normalized_DOCKER.csv"), append: false);
                 var dockerParser = new DockerParserCoordinator(dockerPath);
                 TryAttach(dockerParser, dockerCsv);
                 TryAttach(dockerParser, hostname);
@@ -405,7 +296,7 @@ public class ParserOrchestrator
                 // go in under a single "containers" group.
                 if (findings.Count > 0)
                 {
-                    var quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+                    var quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
                     QuickWinsSectionWriter.WriteSection(
                         quickWinsFile, "DOCKER", "No suspicious container configuration detected.",
                         new List<(string FileName, List<string> Findings)> { ("containers", findings) });
@@ -427,11 +318,6 @@ public class ParserOrchestrator
             {
                 try
                 {
-                    var lrOutDir = Path.Combine(outputDir, "LiveResponse");
-                    Directory.CreateDirectory(lrOutDir);
-                    WriteLiveResponse(lrPath, lrOutDir);
-                    _liveResponseWritten = true;
-
                     // Running processes / open connections → findings
                     var lrDetailed = LiveResponseTriage.AnalyzeDetailed(lrPath, _currentHostUtcOffset);
                     var lrFindings = lrDetailed.Select(d => d.Finding).ToList();
@@ -454,7 +340,7 @@ public class ParserOrchestrator
                     {
                         _log($"[{collectionName}] LiveResponse: {lrFindings.Count} finding(s).");
                         QuickWinsSectionWriter.WriteSection(
-                            Path.Combine(outputDir, "QuickWins.txt"), "LIVE_RESPONSE",
+                            Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile), "LIVE_RESPONSE",
                             "No live response findings.",
                             new List<(string FileName, List<string> Findings)> { ("live_response", lrFindings) });
                     }
@@ -485,7 +371,7 @@ public class ParserOrchestrator
                 var combinedPatterns = new Dictionary<string, int>();
                 DateTime jFirst = DateTime.MaxValue, jLast = DateTime.MinValue;
 
-                var csvPath = Path.Combine(outputDir, "Normalized_JOURNAL.csv");
+                var csvPath = Path.Combine(_processedDir, "Normalized_JOURNAL.csv");
                 using var csv = CreateCsv(csvPath, append: false);
                 var journalParser = new JournalFileParser();
                 TryAttach(journalParser, csv);
@@ -522,7 +408,7 @@ public class ParserOrchestrator
                 // Write ONE combined section with per-file subheaders
                 if (perFileFindings.Count > 0)
                 {
-                    var quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+                    var quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
                     QuickWinsSectionWriter.WriteSection(
                         quickWinsFile, "JOURNAL", "No suspicious activity detected.",
                         perFileFindings);
@@ -558,7 +444,7 @@ public class ParserOrchestrator
                 DateTime bashFirst = DateTime.MaxValue, bashLast = DateTime.MinValue;
 
                 using var bashCsv = CreateCsv(
-                    Path.Combine(outputDir, "Normalized_BASH.csv"), append: false);
+                    Path.Combine(_processedDir, "Normalized_BASH.csv"), append: false);
 
                 var bashParser = new Parsers.BashHistoryParser();
                 bashParser.AttachNormalizedWriter(bashCsv);
@@ -589,7 +475,7 @@ public class ParserOrchestrator
                 // Write ONE combined QuickWins section with per-user subheaders
                 if (perFileFindings.Count > 0)
                 {
-                    var quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+                    var quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
                     QuickWinsSectionWriter.WriteSection(
                         quickWinsFile, "BASH", "No suspicious activity detected.",
                         perFileFindings.Select(pf => (FileName: pf.File, pf.Findings)).ToList());
@@ -610,7 +496,7 @@ public class ParserOrchestrator
         // ── Zsh history ──────────────────────────────────────────────
         if (_config.ParseZsh)
         {
-            using var zshCsv = CreateCsv(Path.Combine(outputDir, "Normalized_ZSH.csv"), append: false);
+            using var zshCsv = CreateCsv(Path.Combine(_processedDir, "Normalized_ZSH.csv"), append: false);
             var zshParser = new Parsers.ZshHistoryParser();
             zshParser.AttachNormalizedWriter(zshCsv);
             zshParser.AttachHostname(hostname);
@@ -623,7 +509,7 @@ public class ParserOrchestrator
         // ── VimInfo ───────────────────────────────────────────────────
         if (_config.ParseVimInfo)
         {
-            using var vimCsv = CreateCsv(Path.Combine(outputDir, "Normalized_VIMINFO.csv"), append: false);
+            using var vimCsv = CreateCsv(Path.Combine(_processedDir, "Normalized_VIMINFO.csv"), append: false);
             var vimParser = new Parsers.VimInfoParser();
             vimParser.AttachNormalizedWriter(vimCsv);
             vimParser.AttachHostname(hostname);
@@ -636,7 +522,7 @@ public class ParserOrchestrator
         // ── Database history ──────────────────────────────────────────
         if (_config.ParseDbHistory)
         {
-            using var dbCsv = CreateCsv(Path.Combine(outputDir, "Normalized_DBHISTORY.csv"), append: false);
+            using var dbCsv = CreateCsv(Path.Combine(_processedDir, "Normalized_DBHISTORY.csv"), append: false);
             var dbParser = new Parsers.DbHistoryParser();
             dbParser.AttachNormalizedWriter(dbCsv);
             dbParser.AttachHostname(hostname);
@@ -649,7 +535,7 @@ public class ParserOrchestrator
         // ── Python history ────────────────────────────────────────────
         if (_config.ParsePythonHistory)
         {
-            using var pyCsv = CreateCsv(Path.Combine(outputDir, "Normalized_PYHISTORY.csv"), append: false);
+            using var pyCsv = CreateCsv(Path.Combine(_processedDir, "Normalized_PYHISTORY.csv"), append: false);
             var pyParser = new Parsers.PythonHistoryParser();
             pyParser.AttachNormalizedWriter(pyCsv);
             pyParser.AttachHostname(hostname);
@@ -662,7 +548,7 @@ public class ParserOrchestrator
         // ── Wget HSTS ─────────────────────────────────────────────────
         if (_config.ParseWgetHsts)
         {
-            using var wgetCsv = CreateCsv(Path.Combine(outputDir, "Normalized_WGETHSTS.csv"), append: false);
+            using var wgetCsv = CreateCsv(Path.Combine(_processedDir, "Normalized_WGETHSTS.csv"), append: false);
             var wgetParser = new Parsers.WgetHstsParser();
             wgetParser.AttachNormalizedWriter(wgetCsv);
             wgetParser.AttachHostname(hostname);
@@ -675,7 +561,7 @@ public class ParserOrchestrator
         // ── Less history ──────────────────────────────────────────────
         if (_config.ParseLessHst)
         {
-            using var lessCsv = CreateCsv(Path.Combine(outputDir, "Normalized_LESSHST.csv"), append: false);
+            using var lessCsv = CreateCsv(Path.Combine(_processedDir, "Normalized_LESSHST.csv"), append: false);
             var lessParser = new Parsers.LessHstParser();
             lessParser.AttachNormalizedWriter(lessCsv);
             lessParser.AttachHostname(hostname);
@@ -688,7 +574,7 @@ public class ParserOrchestrator
         // ── AI coding agents (UAC 3.4.0+ ai_tools artifacts) ─────────
         if (_config.ParseAiAgents)
         {
-            using var aiCsv = CreateCsv(Path.Combine(outputDir, $"Normalized_{Parsers.AiAgentParser.LogKey}.csv"), append: false);
+            using var aiCsv = CreateCsv(Path.Combine(_processedDir, $"Normalized_{Parsers.AiAgentParser.LogKey}.csv"), append: false);
             var aiParser = new Parsers.AiAgentParser();
             aiParser.AttachNormalizedWriter(aiCsv);
             aiParser.AttachHostname(hostname);
@@ -789,12 +675,15 @@ public class ParserOrchestrator
         pc.AppendLine();
         pc.AppendLine("########## PATTERN COUNTS (all sources) ##########");
         foreach (var l in CoverageTable.BuildPatternCounts(_patternsBySource)) pc.AppendLine(l);
-        File.AppendAllText(Path.Combine(outputDir, "QuickWins.txt"), pc.ToString(),
+        File.AppendAllText(Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile), pc.ToString(),
             new System.Text.UTF8Encoding(false));
 
-        // Machine-readable copy for the case summary
-        CaseSummary.WriteFindingsFile(outputDir, host, collectionName, _collectedFindings,
-            hostIps.Select(i => i.Address));
+        // Machine-readable findings and collection info for the case-wide steps
+        // (same files as a KAPE collection writes)
+        Reporting.HostReport.WriteFindingsCsv(Path.Combine(outputDir, Reporting.HostReport.FindingsFile), host,
+            UacFindings.FromAll(_collectedFindings));
+        new Case.CollectionInfo(host, collectionName, Case.CollectionKind.Uac, rootPath, _processedDir,
+            hostIps.Select(i => i.Address).ToList()).Write(outputDir);
 
         _log($"[{collectionName}] Key findings: " +
              $"{_collectedFindings.Count(f => KeyFindingsBuilder.Parse(f.Source, f.Finding).Rank <= 1)} critical/high.");
@@ -825,7 +714,7 @@ public class ParserOrchestrator
 
         _log($"CRONTAB: scanning {crontabFiles.Count} crontab file(s)…");
 
-        var csvPath = Path.Combine(outputDir, "Normalized_CRONTAB.csv");
+        var csvPath = Path.Combine(_processedDir, "Normalized_CRONTAB.csv");
         using var csv = CreateCsv(csvPath, append: false);
         var scanner = new CrontabScanner();
         TryAttach(scanner, csv);
@@ -857,7 +746,7 @@ public class ParserOrchestrator
         }
 
         // Write section
-        var quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+        var quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
         QuickWinsSectionWriter.WriteSection(
             quickWinsFile, "CRONTAB", "No suspicious crontab entries found.",
             perFileFindings.Select(pf => (FileName: pf.FilePath, pf.Findings)).ToList());
@@ -904,7 +793,7 @@ public class ParserOrchestrator
         parser.SetHostUtcOffset(_currentHostUtcOffset);
 
         // Attach CSV writer if supported
-        var csvPath = Path.Combine(outputDir, $"Normalized_{logKey}.csv");
+        var csvPath = Path.Combine(_processedDir, $"Normalized_{logKey}.csv");
         using var csv = CreateCsv(csvPath, append: false);
         TryAttach(parser, csv);
 
@@ -980,7 +869,7 @@ public class ParserOrchestrator
         // Write ONE combined section with per-file subheaders
         if (perFileFindings.Count > 0)
         {
-            var quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+            var quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
             QuickWinsSectionWriter.WriteSection(
                 quickWinsFile, logKey, "No suspicious activity detected.",
                 perFileFindings.Select(pf => (FileName: pf.LogFile, pf.Findings)).ToList());
@@ -1027,7 +916,7 @@ public class ParserOrchestrator
 
             if (logFiles.Count == 0) continue;
 
-            var csvPath = Path.Combine(outputDir, $"Normalized_{logKey.Replace(".", "_")}.csv");
+            var csvPath = Path.Combine(_processedDir, $"Normalized_{logKey.Replace(".", "_")}.csv");
             using var csv = CreateCsv(csvPath, append: false);
             var parser = new AuthSecureLogParser();
             TryAttach(parser, sessionTracker);
@@ -1082,7 +971,7 @@ public class ParserOrchestrator
             // Write ONE combined section with per-file subheaders
             if (perFileFindings.Count > 0)
             {
-                var quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+                var quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
                 QuickWinsSectionWriter.WriteSection(
                     quickWinsFile, logKey, "No suspicious activity detected.",
                     perFileFindings.Select(pf => (FileName: pf.FilePath, pf.Findings)).ToList());
@@ -1101,7 +990,7 @@ public class ParserOrchestrator
         var suspiciousLines = sessionTracker.GenerateSuspiciousSummary("AUTH");
         if (suspiciousLines?.Count > 0)
         {
-            var quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+            var quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
             using var w = new StreamWriter(quickWinsFile, append: true);
             w.WriteLine();
             w.WriteLine("########## [AUTH] Suspicious Sessions ##########");
@@ -1110,82 +999,42 @@ public class ParserOrchestrator
                         $" | SSH interactive: {stats.GetValueOrDefault("SSH Interactive")}" +
                         $" | Unique IPs: {stats.GetValueOrDefault("Unique IPs")}" +
                         $" | Suspicious: {stats.GetValueOrDefault("Suspicious Sessions")}" +
-                        $"  (full detail → Sessions_AUTH.csv)");
+                        $"  (full detail → Sessions.csv, Sessions_Full.csv)");
             w.WriteLine();
             foreach (var line in suspiciousLines)
                 w.WriteLine($"  {line}");
         }
 
-        // 2. Sessions CSV — grouped by User+IP+Daemon+Type. Lists every
-        // session type (including CronJob/SystemdSession/PamGeneric) so the
-        // "Total Sessions" count on the QuickWins stats line and the row
-        // count here actually match — this used to filter those three types
-        // out, so the CSV never matched the "full detail" it promised.
-        var csvSessionPath = Path.Combine(outputDir, "Sessions_AUTH.csv");
+        // 2. Sessions_Full.csv: every individual session, all types (sudo, cron, su, SSH, …)
+        var allSessions = sessionTracker.GetAllSessions();
+        try { new SessionsCsvWriter(outputDir).WriteAll(allSessions); }
+        catch (Exception ex) { _log($"[WARN] [AUTH] Failed to write Sessions_Full.csv: {ex.Message}"); }
+
+        // 3. Sessions.csv and Logons.csv in the shared layout (same columns as
+        //    KAPE collections), so the case summary sees SSH logons between
+        //    case hosts as lateral movement, across Linux and Windows.
         try
         {
-            var allSessions = sessionTracker.GetAllSessions();
-
-            // 2b. Sessions_Full.csv — every individual session, unfiltered
-            //     (includes CronJob/SystemdSession/PamGeneric that Sessions_AUTH.csv excludes)
-            try
-            {
-                new SessionsCsvWriter(outputDir).WriteAll(allSessions);
-            }
-            catch (Exception ex)
-            {
-                _log?.Invoke($"[AUTH] Failed to write Sessions_Full.csv: {ex.Message}");
-            }
-
-            var grouped = allSessions
-                .GroupBy(s => new { s.Username, s.SourceIP, s.Daemon, Type = s.Type.ToString() })
-                .Select(g => (
-                    g.Key.Username,
-                    g.Key.SourceIP,
-                    g.Key.Daemon,
-                    g.Key.Type,
-                    Count: g.Count(),
-                    FirstSeen: g.Min(s => s.StartTime),
-                    LastSeen: g.Max(s => s.StartTime),
-                    AvgDur: (int)g.Average(s => s.DurationSeconds),
-                    Suspicious: g.Any(s => s.IsSuspicious) ? "Yes" : "No",
-                    Reason: g.Where(s => s.IsSuspicious)
-                                  .Select(s => s.SuspicionReason.ToString())
-                                  .FirstOrDefault() ?? "",
-                    Notes: g.Where(s => s.IsSuspicious)
-                                  .Select(s => s.Notes)
-                                  .FirstOrDefault() ?? ""))
-                .OrderByDescending(g => g.Suspicious)
-                .ThenByDescending(g => g.Count);
-
-            static string E(string s) =>
-                s == null ? "" : "\"" + s.Replace("\"", "\"\"") + "\"";
-
-            using var csv = new System.IO.StreamWriter(csvSessionPath, append: false,
-                encoding: new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-
-            csv.WriteLine("User,IP,Daemon,Type,Count,FirstSeen,LastSeen,AvgDurationSec,Suspicious,Reason,Notes");
-
-            foreach (var g in grouped)
-            {
-                csv.WriteLine(string.Join(",",
-                    E(g.Username),
-                    E(g.SourceIP),
-                    E(g.Daemon),
-                    E(g.Type),
-                    g.Count,
-                    E(g.FirstSeen.ToString("yyyy-MM-dd HH:mm:ss")),
-                    E(g.LastSeen.ToString("yyyy-MM-dd HH:mm:ss")),
-                    g.AvgDur,
-                    E(g.Suspicious),
-                    E(g.Reason),
-                    E(g.Notes)
-                ));
-            }
+            var ssh = allSessions.Where(x => x.Type == SessionType.SshInteractive).ToList();
+            var host = string.IsNullOrEmpty(_currentHostname) ? ExtractHostnameFromCollection(Path.GetFileName(outputDir)) : _currentHostname;
+            Reporting.HostReport.WriteSessionsCsv(Path.Combine(outputDir, Reporting.HostReport.SessionsFile), host,
+                ssh.Select(x => new CsirtTriage.Core.LogonSession
+                {
+                    User = x.Username ?? "", LogonType = "SSH", SourceIp = x.SourceIP ?? "", Via = x.Daemon ?? "sshd",
+                    Start = x.StartTime, End = x.EndTime, EndedBy = x.EndTime.HasValue ? "session closed" : "",
+                }));
+            Reporting.HostReport.WriteLogonsCsv(Path.Combine(outputDir, Reporting.HostReport.LogonsFile), host,
+                ssh.Where(x => !string.IsNullOrEmpty(x.SourceIP))
+                   .GroupBy(x => (User: x.Username ?? "", Ip: x.SourceIP))
+                   .Select(g => new CsirtTriage.Core.LogonRecord
+                   {
+                       User = g.Key.User, LogonType = "SSH", SourceIp = g.Key.Ip, Via = "sshd",
+                       Count = g.Count(), First = g.Min(x => x.StartTime), Last = g.Max(x => x.StartTime),
+                   }));
         }
         catch (Exception ex)
         {
-            _log($"[WARN] Could not write Sessions_AUTH.csv: {ex.Message}");
+            _log($"[WARN] Could not write Sessions.csv / Logons.csv: {ex.Message}");
         }
     }
 
@@ -1371,7 +1220,7 @@ public class ParserOrchestrator
 
         // Write ONE combined section — always write if any files were parsed,
         // even if no attack findings, so the RTF always has a WEB section.
-        var quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+        var quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
         var webSections = perFileFindings
             .Select(pf => (FileName: pf.LogFile, pf.Findings))
             .ToList();
@@ -1423,148 +1272,6 @@ public class ParserOrchestrator
             parsed.FirstLogUtc ?? DateTime.MaxValue, parsed.LastLogUtc ?? DateTime.MinValue));
 
         _log($"[{collectionName}] Body file done.");
-    }
-
-    // ── Live response artefacts ───────────────────────────────────────
-    private void WriteLiveResponse(string liveResponseRoot, string outDir)
-    {
-        var lines = new List<string>
-        {
-            "##########################################",
-            "# Live Response Report",
-            $"# Source: {liveResponseRoot}",
-            $"# Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z",
-            "##########################################", ""
-        };
-
-        DateTime first = DateTime.MinValue, last = DateTime.MinValue;
-
-        // File names are the ones UAC 3.x writes. Config files come from the
-        // collected file system ([root]/etc), not from live_response.
-        var etc = LiveResponseTriage.FindSystemRoot(
-            Directory.GetParent(Path.TrimEndingDirectorySeparator(liveResponseRoot))?.FullName) is { } sysRoot
-            ? Path.Combine(sysRoot, "etc") : null;
-
-        if (_config.ParseProcess)
-            TryAppendBlock(lines, liveResponseRoot, ref first, ref last, "## Processes",
-                new[] { "ps_auxwww.txt", "ps_-ef.txt", "ps_-eo_user_pid_ppid_pcpu_pmem_tty_stat_etime_args.txt", "ps.txt" }, 500);
-
-        if (_config.ParseNetwork)
-        {
-            TryAppendBlock(lines, liveResponseRoot, ref first, ref last, "## Network connections",
-                new[] { "ss_-tanp.txt", "ss_-anp.txt", "netstat_-anp.txt", "netstat_-an.txt" }, 500);
-            TryAppendBlock(lines, liveResponseRoot, ref first, ref last, "## Network interfaces",
-                new[] { "ip_addr_show.txt", "ifconfig_-a.txt" }, 100);
-        }
-
-        TryAppendBlock(lines, liveResponseRoot, ref first, ref last, "## Logins (last -a -F)",
-            new[] { "last_-a_-F.txt", "last_-i.txt", "last.txt" }, 300);
-        TryAppendBlock(lines, liveResponseRoot, ref first, ref last, "## Failed logins (lastb -a -F)",
-            new[] { "lastb_-a_-F.txt", "lastb_-i.txt", "lastb.txt" }, 300);
-
-        TryAppendAccounts(lines, etc);
-
-        TryAppendBlock(lines, liveResponseRoot, ref first, ref last, "## Services (unit files)",
-            new[] { "systemctl_list-unit-files.txt", "systemctl_list-units.txt" }, 300);
-        TryAppendBlock(lines, liveResponseRoot, ref first, ref last, "## Timers",
-            new[] { "systemctl_list-timers_--all.txt" }, 100);
-        TryAppendBlock(lines, liveResponseRoot, ref first, ref last, "## Kernel modules",
-            new[] { "lsmod.txt" }, 300);
-
-        if (_config.ParsePersistence)
-            TryAppendPersistence(lines, etc, ref first, ref last);
-
-        if (_config.ParseDocker)
-            TryAppendBlock(lines, liveResponseRoot, ref first, ref last, "## Docker containers",
-                new[] { "docker_container_ls_--all_--size.txt", "docker_info.txt" }, 200);
-
-        var writer = new LiveResponseWriter(outDir);
-        writer.WriteHeader("Live Response – DFIR");
-        writer.WriteSection("Live Response Report", lines);
-
-        _log($"LiveResponse: wrote {lines.Count} lines.");
-    }
-
-    // ── Live response helpers ─────────────────────────────────────────
-    private void TryAppendBlock(List<string> lines, string root,
-        ref DateTime first, ref DateTime last, string header, string[] names, int take)
-    {
-        var path = FindFirst(root, names);
-        if (path == null) return;
-        lines.Add($"{header} — {Path.GetFileName(path)}");
-        foreach (var ln in SafeRead(path).Take(take))
-        {
-            lines.Add(ln);
-            UpdateTimestamps(ln, ref first, ref last);
-        }
-        lines.Add("");
-    }
-
-    // UAC never collects /etc/shadow, so passwd, group and sudoers are what's there.
-    private static void TryAppendAccounts(List<string> lines, string? etc)
-    {
-        if (etc == null) return;
-        var files = new[] { "passwd", "group", "sudoers" }
-            .Select(n => Path.Combine(etc, n)).Where(File.Exists).ToList();
-        var sudoD = Path.Combine(etc, "sudoers.d");
-        if (Directory.Exists(sudoD)) files.AddRange(Directory.EnumerateFiles(sudoD));
-        if (files.Count == 0) return;
-
-        lines.Add("## Accounts");
-        foreach (var f in files)
-        {
-            lines.Add("-- /etc/" + Path.GetRelativePath(etc, f).Replace('\\', '/') + " --");
-            lines.AddRange(SafeRead(f).Where(l => !l.TrimStart().StartsWith("#")).Take(200));
-            lines.Add("");
-        }
-    }
-
-    private void TryAppendPersistence(List<string> lines, string? etc,
-        ref DateTime first, ref DateTime last)
-    {
-        if (etc == null) return;
-        var files = new[] { "rc.local", "ld.so.preload", "profile", "bash.bashrc", "bashrc", "crontab" }
-            .Select(n => Path.Combine(etc, n)).Where(File.Exists).ToList();
-        if (files.Count == 0) return;
-
-        lines.Add("## Persistence candidates");
-        foreach (var f in files)
-        {
-            lines.Add("-- /etc/" + Path.GetFileName(f) + " --");
-            foreach (var ln in SafeRead(f).Where(l => !l.TrimStart().StartsWith("#") && l.Trim().Length > 0).Take(150))
-            {
-                lines.Add(ln);
-                UpdateTimestamps(ln, ref first, ref last);
-            }
-            lines.Add("");
-        }
-    }
-
-    // ── Static helpers ────────────────────────────────────────────────
-    private static string? FindFirst(string root, string[] names)
-    {
-        foreach (var n in names)
-        {
-            var entry = Directory.EnumerateFileSystemEntries(root, n, SearchOption.AllDirectories)
-                                 .FirstOrDefault();
-            if (!string.IsNullOrEmpty(entry)) return entry;
-        }
-        return null;
-    }
-
-    private static IEnumerable<string> SafeRead(string path)
-    {
-        try { return File.ReadLines(path); }
-        catch { return Array.Empty<string>(); }
-    }
-
-    private static void UpdateTimestamps(string line, ref DateTime first, ref DateTime last)
-    {
-        var m = Regex.Match(line, @"\b(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})\b");
-        if (!m.Success) return;
-        if (!DateTime.TryParse(m.Value, out var dt)) return;
-        if (first == DateTime.MinValue || dt < first) first = dt;
-        if (dt > last) last = dt;
     }
 
     // ── Reflection helpers (mirrors Form1) ────────────────────────────
@@ -1629,7 +1336,7 @@ public class ParserOrchestrator
 
         if (perFileFindings.Count > 0)
         {
-            var quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+            var quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
             QuickWinsSectionWriter.WriteSection(
                 quickWinsFile, logKey, "No suspicious activity detected.",
                 perFileFindings.Select(pf => (FileName: pf.File, pf.Findings)).ToList());

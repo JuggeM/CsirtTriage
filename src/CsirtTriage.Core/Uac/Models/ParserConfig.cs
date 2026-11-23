@@ -12,34 +12,28 @@ public class ParserConfig
     public string CaseName { get; set; } = string.Empty;
     public string AnalystName { get; set; } = string.Empty;
     public string CaseFolderPath { get; set; } = string.Empty;
-    public string OutputPath { get; set; } = "Processed";
+    public string OutputPath { get; set; } = "Level2";
 
     /// <summary>
-    /// The folder results are actually written to. A relative OutputPath is
-    /// resolved against the case folder (not the process working directory),
-    /// and the case folder root itself is never used — it holds Upload\ and
-    /// Decompressed\, so output there would be mixed with the evidence. Both
-    /// cases fall back to &lt;case&gt;\Processed.
+    /// The folder analysis results are written to (Level2\ by default). A
+    /// relative OutputPath is resolved against the case folder. The case root
+    /// (evidence) and Processed\ (parsed data) are never used, so results
+    /// never mix with their input; both fall back to &lt;case&gt;\Level2.
     /// </summary>
     public string ResolveOutputPath()
     {
-        string caseDir = string.IsNullOrWhiteSpace(CaseFolderPath)
-            ? string.Empty
-            : System.IO.Path.GetFullPath(CaseFolderPath);
-        string defaultOut = System.IO.Path.Combine(caseDir, "Processed");
+        string caseDir = string.IsNullOrWhiteSpace(CaseFolderPath) ? string.Empty : Path.GetFullPath(CaseFolderPath);
+        string defaultOut = Path.Combine(caseDir, "Level2");
+        if (string.IsNullOrWhiteSpace(OutputPath)) return defaultOut;
 
-        if (string.IsNullOrWhiteSpace(OutputPath))
+        string resolved = Path.IsPathRooted(OutputPath)
+            ? Path.GetFullPath(OutputPath)
+            : Path.GetFullPath(Path.Combine(caseDir, OutputPath));
+
+        static bool Same(string a, string b) =>
+            string.Equals(a.TrimEnd('\\', '/'), b.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase);
+        if (caseDir.Length > 0 && (Same(resolved, caseDir) || Same(resolved, Path.Combine(caseDir, "Processed"))))
             return defaultOut;
-
-        string resolved = System.IO.Path.IsPathRooted(OutputPath)
-            ? System.IO.Path.GetFullPath(OutputPath)
-            : System.IO.Path.GetFullPath(System.IO.Path.Combine(caseDir, OutputPath));
-
-        if (caseDir.Length > 0 && string.Equals(
-                resolved.TrimEnd('\\', '/'), caseDir.TrimEnd('\\', '/'),
-                StringComparison.OrdinalIgnoreCase))
-            return defaultOut;
-
         return resolved;
     }
 
@@ -55,10 +49,6 @@ public class ParserConfig
     public bool ParseWebLogs { get; set; } = true;
     public bool ParseDocker { get; set; } = true;
     public bool ParseAudit { get; set; } = true;
-    public bool ParseProcess { get; set; } = true;
-    public bool ParseNetwork { get; set; } = true;
-    public bool ParsePersistence { get; set; } = true;
-    public bool ParseFileSystem { get; set; } = true;
     public bool ParseLiveResponse { get; set; } = true;
     public bool ParseBodyFile { get; set; } = true;
     public bool ParseJournal { get; set; } = true;
@@ -120,9 +110,5 @@ public class ParserConfig
     });
 
     // ── Output options ───────────────────────────────────────────────
-    public bool OutputNormalizedCsv { get; set; } = true;
-    public bool OutputQuickWins { get; set; } = true;
-    public bool OutputPerLogSummaries { get; set; } = true;
-    public bool OutputTimeline { get; set; } = true;
     public bool OutputCollapseDups { get; set; } = true;
 }

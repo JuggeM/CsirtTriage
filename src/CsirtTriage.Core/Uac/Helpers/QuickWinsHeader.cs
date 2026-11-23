@@ -9,7 +9,7 @@ namespace CsirtTriage.Core.Uac
 {
     public static class QuickWinsHeader
     {
-        private const string QuickWinsFileName = "QuickWins.txt";
+        private const string QuickWinsFileName = Reporting.HostReport.QuickWinsFile;
         private const string HeaderMarker = "# Quick Wins - Global Summary";
         private const string TimelineMarker = "########## Timeline Coverage ##########";
 

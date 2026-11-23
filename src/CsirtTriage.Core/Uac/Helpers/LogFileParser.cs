@@ -132,7 +132,7 @@ namespace CsirtTriage.Core.Uac
 
         protected virtual void WriteToQuickWins(string outputDir, List<string> findings, Dictionary<string, int> patternCounts)
         {
-            string quickWinsFile = Path.Combine(outputDir, "QuickWins.txt");
+            string quickWinsFile = Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
             string logTypeTag = GetType().Name.Replace("Parser", "").ToUpper();
 
             var suspicious = findings

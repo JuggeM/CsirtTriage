@@ -50,7 +50,7 @@ namespace CsirtTriage.Core.Uac
 
                 // Write directly — no AppendSection wrapper so we don't get a
                 // redundant "########## [AUTH.LOG] Summary ##########" outer header.
-                string path = System.IO.Path.Combine(outputDir, "QuickWins.txt");
+                string path = System.IO.Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile);
                 System.IO.Directory.CreateDirectory(outputDir);
                 var sb = new StringBuilder();
                 sb.AppendLine();

@@ -10,7 +10,7 @@ namespace CsirtTriage.Core.Uac
 {
     public static class QuickWinsWriter
     {
-        private const string QuickWinsFileName = "QuickWins.txt";
+        private const string QuickWinsFileName = Reporting.HostReport.QuickWinsFile;
 
         private static string QuickWinsPath(string outputDir)
             => Path.Combine(outputDir, QuickWinsFileName);

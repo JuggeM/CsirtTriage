@@ -1,6 +1,6 @@
 namespace CsirtTriage.Core;
 
-public enum Severity { Critical = 0, High = 1, Medium = 2, Suspicious = 3 }
+public enum Severity { Critical = 0, High = 1, Medium = 2, Suspicious = 3, Low = 4 }
 
 /// <summary>
 /// One analyst-facing finding. Repeated events (e.g. 300 failed logons from
@@ -13,7 +13,7 @@ public sealed class Finding
     public DateTime? TimeUtc { get; init; }
     public DateTime? LastUtc { get; init; }
     public int Count { get; init; } = 1;
-    /// <summary>Short source tag: EVTX, PREFETCH, AMCACHE, SHIMCACHE, REGISTRY, LNK, JUMPLIST, MFT, USNJRNL, RECYCLEBIN, SHELLBAGS.</summary>
+    /// <summary>Short source tag: EVTX, PREFETCH, AMCACHE, … (KAPE); AUTH.LOG, SYSLOG, WEB, BASH, … (UAC).</summary>
     public string Source { get; init; } = "";
     /// <summary>Pattern label used for PATTERN COUNTS, e.g. "Service installed".</summary>
     public string Category { get; init; } = "";
@@ -28,6 +28,7 @@ public sealed class Finding
         Severity.Critical => "CRITICAL",
         Severity.High => "HIGH",
         Severity.Medium => "MEDIUM",
+        Severity.Low => "LOW",
         _ => "SUSPICIOUS",
     };
 
