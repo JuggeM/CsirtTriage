@@ -79,9 +79,7 @@ jobs:
           | $zip | ``$zipHash`` |
           "@
           Set-Content notes.md $notes -Encoding utf8
-          # v0.x is a pre-release until the app has been used on real cases
           $ghArgs = @('release', 'create', $tag, 'publish\CsirtTriage.exe', 'publish\rules.json', $zip,
-                      '--title', "CsirtTriage $version", '--notes-file', 'notes.md', '--target', '${{ github.sha }}')
-          if ($version.StartsWith('0.')) { $ghArgs += '--prerelease' }
+                      '--title', "CsirtTriage $version", '--notes-file', 'notes.md', '--target', '${{ github.sha }}', '--latest')
           gh @ghArgs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

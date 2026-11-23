@@ -22,7 +22,7 @@ Screenshots use the synthetic test cases from `tools\` (all IPs from documentati
 
 Get `CsirtTriage.exe` and `rules.json` from the [latest release](https://github.com/JuggeM/CsirtTriage/releases) and keep them in the same folder (the zip holds both). The exe is a single self-contained file for 64-bit Windows: no install and no .NET runtime needed. SHA256 checksums are in the release notes.
 
-To release a new version, push a tag (`git tag v0.2.0 && git push origin v0.2.0`) or start **Actions → Release → Run workflow** with the version: the release workflow builds, runs the regression tests and publishes the release. `v0.x` versions are marked as pre-releases.
+To release a new version, push a tag (`git tag v0.2.0 && git push origin v0.2.0`) or start **Actions → Release → Run workflow** with the version: the release workflow builds, runs the regression tests and publishes the release.
 
 ## Case folder
 
