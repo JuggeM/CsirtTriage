@@ -1,0 +1,77 @@
+name: Release
+
+# Push a tag such as v0.2.0 to build, test and publish CsirtTriage.exe as a GitHub release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        run: dotnet build CsirtTriage.sln -c Release -nologo
+
+      - name: Regression tests
+        shell: pwsh
+        run: |
+          $cli = (Resolve-Path src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll).Path
+          foreach ($t in 'Kape', 'Uac') {
+            & ".\tools\Test-${t}Detections.ps1" -Exe $cli -WorkFolder (Join-Path $env:RUNNER_TEMP "${t}Regression")
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          .\tools\Test-MixedCase.ps1 -Exe $cli -WorkFolder (Join-Path $env:RUNNER_TEMP 'MixedRegression')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish single-file exe
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          dotnet publish src\CsirtTriage.WPF -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true -p:DebugType=none -p:Version=$version -o publish -nologo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path publish\CsirtTriage.exe) -or -not (Test-Path publish\rules.json)) { throw 'CsirtTriage.exe or rules.json missing' }
+          Compress-Archive -Path publish\CsirtTriage.exe, publish\rules.json -DestinationPath "CsirtTriage-$version-win-x64.zip"
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = $tag.TrimStart('v')
+          $zip = "CsirtTriage-$version-win-x64.zip"
+          $exeHash = (Get-FileHash publish\CsirtTriage.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $rulesHash = (Get-FileHash publish\rules.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $notes = @"
+          Download ``CsirtTriage.exe`` and ``rules.json`` and keep them in the same folder (or take the zip, which holds both). The exe is a single self-contained file for 64-bit Windows: no install and no .NET runtime needed. ``rules.json`` holds the Windows detection patterns and can be edited.
+
+          Headless: ``CsirtTriage.exe --case <folder> [--parallel n] [--list]``; see the README.
+
+          Built and tested by the [release workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}): UAC, KAPE and mixed-case regression tests passed.
+
+          | File | SHA256 |
+          |---|---|
+          | CsirtTriage.exe | ``$exeHash`` |
+          | rules.json | ``$rulesHash`` |
+          | $zip | ``$zipHash`` |
+          "@
+          Set-Content notes.md $notes -Encoding utf8
+          # v0.x is a pre-release until the app has been used on real cases
+          $ghArgs = @('release', 'create', $tag, 'publish\CsirtTriage.exe', 'publish\rules.json', $zip,
+                      '--title', "CsirtTriage $version", '--notes-file', 'notes.md')
+          if ($version.StartsWith('0.')) { $ghArgs += '--prerelease' }
+          gh @ghArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
