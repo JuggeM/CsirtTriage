@@ -28,7 +28,8 @@ CaseFolder\
         ├── Logons.csv              inbound logons by source (SSH, RDP, network, admin shares)
         ├── Sessions.csv            logon sessions with start, end and duration
         ├── host.txt                host name, IPs, collection type and source folder
-        └── UAC only: Sessions_Full.csv (every session type), ProcessedBodyFile.csv (scored file timeline), DockerContainers.csv
+        └── UAC only: Sessions_Full.csv (every session type), ProcessedBodyFile.csv (scored file timeline),
+            Sha1Candidates.csv (executables worth a hash lookup), DockerContainers.csv
 ```
 
 Windows collections are processed by your ORC script (ORC → KAPE `!EZParser` → `Processed\<collection>`); CsirtTriage only reads that output. An ORC collection without KAPE output yet is listed as *waiting for KAPE*.
@@ -86,6 +87,7 @@ CsirtTriage.exe --case X:\INC-4711 [--name <case>] [--analyst <name>] [--paralle
 | Docker | Container logs and events | Privileged containers, unusual image pulls |
 | Live response | UAC `live_response`, `chkrootkit`, `system`, `[root]/etc` | Processes from temp paths, suspicious command lines, connections to C2/mining ports, processes running from deleted binaries (UAC-recovered), wtmp/btmp logins (external IPs, success after failed attempts), `/etc/ld.so.preload` rootkits (including entries only the raw disk read shows), UID 0 and passwordless accounts, `NOPASSWD:ALL` sudo, hidden files in temp folders, host IP addresses |
 | Body file | `bodyfile.txt` | Scored file timeline: dropped tools, webshells, executable or hidden files in temp directories |
+| SHA1 hashes | `hash_executables.sha1` | Executables outside system folders scored by path (temp, home, `/dev/shm`), hidden names, suspicious names and extensions; every candidate in `Sha1Candidates.csv` for a threat-intel lookup, the top 100 as findings; case SHA1 IOCs are matched against it |
 
 ### Windows (KAPE)
 

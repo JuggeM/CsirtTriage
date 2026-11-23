@@ -115,6 +115,12 @@ public class ParserOrchestrator
             ProcessBodyFile(collectionName, rootPath, outputDir);
         }
 
+        if (_config.ParseHashes)
+        {
+            ct.ThrowIfCancellationRequested();
+            ProcessHashes(collectionName, rootPath, outputDir);
+        }
+
         // Analyst summary at the top of QuickWins — built last so it covers
         // every source, including the body file. Also writes Findings.csv and
         // host.txt, which the case-wide steps read.
@@ -640,6 +646,7 @@ public class ParserOrchestrator
         if (_config.ParseJournal) yield return "JOURNAL";
         if (_config.ParseLiveResponse) yield return "LIVE_RESPONSE";
         if (_config.ParseBodyFile) yield return "BODYFILE";
+        if (_config.ParseHashes) yield return "HASHES";
         if (_config.ParseBashHistory) yield return "BASH";
         if (_config.ParseWebLogs) yield return "WEB";
         if (_config.ParseDocker) yield return "DOCKER";
@@ -1272,6 +1279,52 @@ public class ParserOrchestrator
             parsed.FirstLogUtc ?? DateTime.MaxValue, parsed.LastLogUtc ?? DateTime.MinValue));
 
         _log($"[{collectionName}] Body file done.");
+    }
+
+    // ── hash_executables.sha1 ────────────────────────────────────────
+    public const string Sha1CandidatesFile = "Sha1Candidates.csv";
+    private const int MaxHashFindings = 100;
+
+    /// <summary>
+    /// UAC's hash_executables.sha1 (sha1sum output for every executable):
+    /// scores each path (staging folder, hidden, suspicious name or
+    /// extension), writes every candidate to Sha1Candidates.csv for a
+    /// threat-intel lookup, and the top ones as findings.
+    /// </summary>
+    private void ProcessHashes(string collectionName, string rootPath, string outputDir)
+    {
+        var file = Directory.EnumerateFiles(rootPath, "hash_executables.sha1", SearchOption.AllDirectories).FirstOrDefault();
+        if (file == null)
+        {
+            _log($"[{collectionName}] hash_executables.sha1 not found — skipping.");
+            return;
+        }
+
+        var (candidates, stats) = new Sha1CandidateScorer().Score(file);
+        _log($"[{collectionName}] SHA1 hashes: {stats}");
+
+        using (var w = new StreamWriter(Path.Combine(outputDir, Sha1CandidatesFile), false, new System.Text.UTF8Encoding(false)))
+        {
+            w.WriteLine("Sha1,Path,Score,Reasons");
+            foreach (var c in candidates)
+                w.WriteLine(Reporting.Csv.Row(c.Hash.ToLowerInvariant(), c.Path, c.Score.ToString(CultureInfo.InvariantCulture), c.Reasons));
+        }
+
+        // Score 3–4: staging path or odd name alone; 5–6: two signals; 7+: e.g. hidden script in /tmp
+        static string Sev(int score) => score >= 7 ? "HIGH" : score >= 5 ? "MEDIUM" : "SUSPICIOUS";
+        var findings = candidates.Take(MaxHashFindings)
+            .Select(c => $"[HASHES] [{Sev(c.Score)}] Executable worth a hash lookup: {c.Path} sha1={c.Hash.ToLowerInvariant()} (score {c.Score}: {c.Reasons})")
+            .ToList();
+        if (candidates.Count > MaxHashFindings)
+            findings.Add($"[HASHES] [LOW] {candidates.Count - MaxHashFindings} more candidate(s) — see {Sha1CandidatesFile}");
+
+        QuickWinsSectionWriter.WriteSection(Path.Combine(outputDir, Reporting.HostReport.QuickWinsFile), "HASHES",
+            $"No executables outside system folders worth a hash lookup ({stats.TotalLines:N0} hashed).",
+            new List<(string FileName, List<string> Findings)> { (Path.GetFileName(file), findings) });
+        foreach (var f in findings) _collectedFindings.Add(("HASHES", f));
+        // No event times: the file lists what was on disk at collection
+        _sourceInfos.Add(new CoverageTable.SourceInfo("HASHES", 1, DateTime.MaxValue, DateTime.MinValue));
+        _log($"[{collectionName}] SHA1 hashes: {candidates.Count} candidate(s) → {Sha1CandidatesFile}");
     }
 
     // ── Reflection helpers (mirrors Form1) ────────────────────────────

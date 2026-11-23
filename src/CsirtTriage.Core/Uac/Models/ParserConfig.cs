@@ -60,6 +60,8 @@ public class ParserConfig
     public bool ParseWgetHsts { get; set; } = true;
     public bool ParseLessHst { get; set; } = true;
     public bool ParseAiAgents { get; set; } = true;
+    /// <summary>hash_executables.sha1: executables worth a hash lookup, scored by path and name.</summary>
+    public bool ParseHashes { get; set; } = true;
 
     // ── Detection thresholds ─────────────────────────────────────────
     /// <summary>Failed login count before an IP is flagged as brute-force.</summary>

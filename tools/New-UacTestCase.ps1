@@ -515,6 +515,15 @@ function New-Collection([string]$name, [string]$host_, [string]$day) {
         "0|/usr/bin/ls|2097155|-rwxr-xr-x|0|0|138208|$epoch|1700000000|1700000000|0"
     )
 
+    # sha1sum of every executable, as UAC writes it; /tmp/.x.sh carries the SHA1 from example-iocs.txt
+    Write-LfFile "$root\hash_executables\hash_executables.sha1" @(
+        "da39a3ee5e6b4b0d3255bfef95601890afd80709  /tmp/.x.sh"
+        "7c4a8d09ca3762af61e59520943dc26494f8941b  /dev/shm/.kworker"
+        "2fd4e1c67a2d28fced849ee1bb76e7391b93eb12  /usr/bin/ls"
+        "356a192b7913b04c54574d18c28d46e6395428ab  /home/dev/tools/scan.py"
+        "77de68daecd823babbb58edb1c8e14d7106e83bb  /opt/app/bin/server"
+    )
+
     Write-LfFile "$root\uac.log" @(("2026-11-{0} 12:00:00 Z INFO UAC (Unix-like Artifacts Collector) synthetic test collection for {1}" -f $day, $host_))
 
     # Archive the tree without a wrapper folder, like UAC does.

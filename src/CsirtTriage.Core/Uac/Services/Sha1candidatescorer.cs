@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -145,7 +145,8 @@ public class Sha1CandidateScorer
 
         string pathLower = path.ToLowerInvariant();
         string fileName = Path.GetFileName(pathLower);
-        string ext = Path.GetExtension(fileName);
+        // ".kworker" is a hidden file without an extension, not an extension
+        string ext = fileName.LastIndexOf('.') > 0 ? Path.GetExtension(fileName) : "";
 
         // High-interest path
         foreach (var p in HighInterestPaths)

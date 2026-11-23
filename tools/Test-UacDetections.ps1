@@ -93,6 +93,11 @@ Has $web 'HIGH' 'BODYFILE' 'Hidden executable in temp dir: /tmp/\.x\.sh'
 Has $web 'HIGH' 'LIVE_RESPONSE' 'Established connection from flagged process'
 Has $web 'HIGH' 'BASH' 'NOPASSWD:ALL'
 Has $web 'HIGH' 'BASH' 'history -c'
+Has $web 'HIGH' 'HASHES' 'hash lookup: /tmp/\.x\.sh sha1=da39a3ee5e6b4b0d3255bfef95601890afd80709'
+Has $web 'HIGH' 'HASHES' 'hash lookup: /dev/shm/\.kworker'
+Has $web 'MEDIUM' 'HASHES' 'hash lookup: /home/dev/tools/scan\.py'
+$cand = @(Import-Csv (Join-Path (Join-Path $level2 $web) 'Sha1Candidates.csv'))
+Check ($cand.Count -eq 3) "web01 Sha1Candidates.csv: 3 candidates, /usr/bin/ls whitelisted, /opt/app/bin/server below threshold (got $($cand.Count))"
 
 Write-Host 'db01 AI coding agents'
 Has $db 'HIGH' 'AIAGENT' 'approvals disabled \(bypassPermissions\)'
@@ -110,7 +115,8 @@ Write-Host 'Shared outputs'
 $logons = @(Import-Csv (Join-Path (Join-Path $level2 $web) 'Logons.csv'))
 Check (@($logons | Where-Object { $_.User -eq 'root' -and $_.SourceIp -eq '203.0.113.45' -and $_.LogonType -eq 'SSH' }).Count -eq 1) 'web01 SSH logon in Logons.csv'
 $hits = @(Import-Csv (Join-Path (Join-Path $level2 $web) 'IocHits.csv'))
-Check ($hits.Count -eq 9) "web01 case IOC hits = 9 (got $($hits.Count))"
+Check ($hits.Count -eq 10) "web01 case IOC hits = 10 (got $($hits.Count))"
+Check (@($hits | Where-Object { $_.Type -eq 'SHA1' -and $_.Sources -match 'HASHES' }).Count -eq 1) 'case SHA1 found in hash_executables.sha1'
 Check (@($hits | Where-Object { $_.Type -eq 'CIDR' -and $_.Ioc -eq '198.51.100.0/24' }).Count -eq 1) 'CIDR IOC matched'
 Check ((Get-Content (Join-Path (Join-Path $level2 $web) '.quickwins.txt') -Raw) -match 'CASE IOC HITS') 'IOC block in the QuickWins source'
 

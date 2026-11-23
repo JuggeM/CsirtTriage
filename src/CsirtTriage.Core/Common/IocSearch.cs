@@ -134,6 +134,18 @@ public static class IocSearch
             }
         }
 
+        // hash_executables.sha1 ("<sha1>  <path>"): a case SHA1 or path seen on disk
+        if (rawRoot != null && Directory.Exists(rawRoot))
+        {
+            string? hashFile = null;
+            try { hashFile = Directory.EnumerateFiles(rawRoot, "hash_executables.sha1", SearchOption.AllDirectories).FirstOrDefault(); }
+            catch { /* unreadable folder */ }
+            if (hashFile != null)
+                foreach (var line in SafeLines(hashFile))
+                    foreach (var ioc in matcher.Match(line))
+                        Record(ioc, "HASHES", null, line.Trim());
+        }
+
         // Raw live response output
         if (rawRoot != null && Directory.Exists(rawRoot))
         {
