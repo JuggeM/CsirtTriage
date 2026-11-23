@@ -28,7 +28,7 @@
     Delete an existing case folder at Path first.
 
 .EXAMPLE
-    .\tools\New-TestCase.ps1 -Force
+    .\tools\New-UacTestCase.ps1 -Force
 #>
 param(
     [string]$Path = (Join-Path (Split-Path $PSScriptRoot -Parent) 'TestCase'),
@@ -36,24 +36,32 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$tar = Join-Path $env:SystemRoot 'System32\tar.exe'
-if (-not (Test-Path $tar)) { throw "tar.exe not found at $tar" }
+# Windows ships bsdtar in System32; elsewhere use tar from PATH
+$tar = if ($env:SystemRoot) { Join-Path $env:SystemRoot 'System32\tar.exe' } else { (Get-Command tar -ErrorAction SilentlyContinue).Source }
+if (-not $tar -or -not (Test-Path $tar)) { throw "tar not found ($tar)" }
 
 if (Test-Path $Path) {
     if (-not $Force) { throw "$Path already exists. Use -Force to recreate it." }
     # [IO.Directory] with \\?\ instead of Remove-Item: "[root]" is a wildcard to
     # Remove-Item, and journal paths can exceed MAX_PATH (260) in deep folders.
-    [IO.Directory]::Delete('\\?\' + (Resolve-Path -LiteralPath $Path).ProviderPath, $true)
+    $full = (Resolve-Path -LiteralPath $Path).ProviderPath
+    [IO.Directory]::Delete($(if ($IsWindows -or $null -eq $IsWindows) { '\\?\' + $full } else { $full }), $true)
 }
 
 $upload     = Join-Path $Path 'Upload'
 $decomp     = Join-Path $Path 'Decompressed'
 $processed  = Join-Path $Path 'Processed'
-$staging    = Join-Path $env:TEMP ('csirt_testcase_' + [guid]::NewGuid().ToString('N'))
+$staging    = Join-Path ([IO.Path]::GetTempPath()) ('csirt_testcase_' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force $upload, $staging | Out-Null
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
+
+# The script builds paths with '\'. .NET on Linux/macOS treats '\' as part of a
+# file name, so convert to '/' there (Windows PowerShell 5.1 has no $IsWindows).
+$onWindows = ($IsWindows -or $null -eq $IsWindows)
+function Fix([string]$p) { if ($onWindows) { $p } else { $p -replace '\\', '/' } }
 function Write-LfFile([string]$file, [string[]]$lines) {
+    $file = Fix $file
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($file))
     [IO.File]::WriteAllText($file, (($lines -join "`n") + "`n"), $utf8)
 }
@@ -106,6 +114,7 @@ function Write-Journal([string]$file, [object[]]$entries) {
     $ms.Position = 152; $bw.Write([uint64]$entryOffsets.Count)        # n_entries
     $ms.Position = 176; $bw.Write([uint64]$arrayOffset)               # entry_array_offset
     $bw.Flush()
+    $file = Fix $file
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($file))
     [IO.File]::WriteAllBytes($file, $ms.ToArray())
 }
@@ -247,7 +256,7 @@ function New-Collection([string]$name, [string]$host_, [string]$day) {
     )
     $gzPath = "$sys\var\log\apache2\access.log.2.gz"
     $bytes = $utf8.GetBytes(($gzLines -join "`n") + "`n")
-    $fs = [IO.File]::Create($gzPath)
+    $fs = [IO.File]::Create((Fix $gzPath))
     $gz = New-Object IO.Compression.GZipStream($fs, [IO.Compression.CompressionMode]::Compress)
     $gz.Write($bytes, 0, $bytes.Length); $gz.Dispose(); $fs.Dispose()
 
@@ -516,9 +525,14 @@ function New-Collection([string]$name, [string]$host_, [string]$day) {
 
 function Copy-Extracted([string]$src, [string]$name) {
     $dst = Join-Path $decomp $name
-    & robocopy $src $dst /E /NFL /NDL /NJH /NJS /NP | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "robocopy failed for $name" }
-    $global:LASTEXITCODE = 0
+    if ($onWindows) {
+        & robocopy $src $dst /E /NFL /NDL /NJH /NJS /NP | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "robocopy failed for $name" }
+        $global:LASTEXITCODE = 0
+    } else {
+        & cp -r -- $src $dst
+        if ($LASTEXITCODE -ne 0) { throw "cp failed for $name" }
+    }
 }
 
 $cols = [ordered]@{
