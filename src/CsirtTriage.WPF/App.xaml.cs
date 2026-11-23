@@ -16,6 +16,21 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        int shots = Array.FindIndex(e.Args, a => a.Equals("--screenshots", StringComparison.OrdinalIgnoreCase));
+        if (shots >= 0 && shots + 2 < e.Args.Length)
+        {
+            AttachConsole(-1);
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Dispatcher.InvokeAsync(async () =>
+            {
+                int code;
+                try { code = await ScreenshotMode.RunAsync(Path.GetFullPath(e.Args[shots + 1]), Path.GetFullPath(e.Args[shots + 2])); }
+                catch (Exception ex) { Console.Error.WriteLine($"[ERROR] {ex}"); code = 1; }
+                Shutdown(code);
+            });
+            return;
+        }
+
         bool headless = e.Args.Any(a => a.Equals("--case", StringComparison.OrdinalIgnoreCase)
                                      || a.Equals("--help", StringComparison.OrdinalIgnoreCase));
         if (!headless)

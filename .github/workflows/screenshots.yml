@@ -1,0 +1,68 @@
+name: Screenshots
+
+# README screenshots of the app on a synthetic case (documentation-range IPs only).
+# The PNGs go to the 'screenshots' branch (and an artifact) for review before they go into docs\.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/screenshots.yml', 'src/CsirtTriage.WPF/ScreenshotMode.cs']
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        run: dotnet build CsirtTriage.sln -c Release -nologo
+
+      - name: Synthetic case, partly analysed
+        shell: pwsh
+        run: |
+          $case = Join-Path $env:RUNNER_TEMP 'INC-4711'
+          .\tools\New-UacTestCase.ps1 -Path $case | Out-Null
+          .\tools\New-KapeTestCase.ps1 -CaseFolder $case 3>$null | Out-Null
+          Copy-Item tools\example-iocs.txt (Join-Path $case 'iocs.txt') -Force
+          # Leave out the test-only oddities (corrupt archive, fake earlier output)
+          Remove-Item (Join-Path $case 'Uploads\uac-broken-linux-20261106.tar.gz') -Force
+          Remove-Item (Join-Path $case 'Level2') -Recurse -Force
+          Remove-Item (Join-Path $case 'Processed\uac-file01-linux-20261105') -Recurse -Force
+          # An ORC collection the processing script hasn't handled yet
+          New-Item -ItemType Directory -Force (Join-Path $case 'Decompressed\ORC_WorkStation_WS02_20261103_080000\Windows') | Out-Null
+          # Some collections analysed earlier, the rest are left for the app to run
+          dotnet src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll --case $case --name 'INC-4711 web01 compromise' --only 'uac-db01-linux-20261102,DC01'
+          "CASE=$case" >> $env:GITHUB_ENV
+
+      - name: Take screenshots
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path src\CsirtTriage.WPF\bin\Release\net8.0-windows\CsirtTriage.exe).Path
+          $p = Start-Process $exe -ArgumentList '--screenshots', $env:CASE, 'shots' -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "Screenshot mode exited with $($p.ExitCode)" }
+          Get-ChildItem shots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shots
+
+      - name: Push to the screenshots branch
+        shell: pwsh
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -B screenshots
+          New-Item -ItemType Directory -Force docs | Out-Null
+          Copy-Item shots\*.png docs\ -Force
+          git add docs\*.png
+          git commit -m "Screenshots from run ${{ github.run_id }}"
+          git push --force origin screenshots
