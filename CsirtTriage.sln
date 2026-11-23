@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{D3280230-FD9C-49F0-B1B2-78742016AECB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsirtTriage.Core", "src\CsirtTriage.Core\CsirtTriage.Core.csproj", "{EA3D39A5-1F48-4DB5-B979-F190EE0C4C30}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CsirtTriage.Cli", "src\CsirtTriage.Cli\CsirtTriage.Cli.csproj", "{CE109092-CA59-4CC8-943F-1A1F1DA669AE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EA3D39A5-1F48-4DB5-B979-F190EE0C4C30}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EA3D39A5-1F48-4DB5-B979-F190EE0C4C30}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EA3D39A5-1F48-4DB5-B979-F190EE0C4C30}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EA3D39A5-1F48-4DB5-B979-F190EE0C4C30}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CE109092-CA59-4CC8-943F-1A1F1DA669AE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE109092-CA59-4CC8-943F-1A1F1DA669AE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE109092-CA59-4CC8-943F-1A1F1DA669AE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE109092-CA59-4CC8-943F-1A1F1DA669AE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{EA3D39A5-1F48-4DB5-B979-F190EE0C4C30} = {D3280230-FD9C-49F0-B1B2-78742016AECB}
+		{CE109092-CA59-4CC8-943F-1A1F1DA669AE} = {D3280230-FD9C-49F0-B1B2-78742016AECB}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,38 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        run: dotnet build CsirtTriage.sln -c Release -nologo
+
+      - name: Regression test, KAPE (synthetic case, headless run)
+        shell: pwsh
+        run: |
+          .\tools\Test-KapeDetections.ps1 -Exe (Resolve-Path src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll).Path -WorkFolder (Join-Path $env:RUNNER_TEMP 'KapeRegression')
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Keep the run output when a test fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-output
+          path: ${{ runner.temp }}/*Regression
+          if-no-files-found: ignore
