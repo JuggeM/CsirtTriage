@@ -4,6 +4,20 @@ DFIR triage for Windows analysts, in one desktop app for **Linux/Unix collection
 
 It replaces [CsirtParser.WPF](https://github.com/JuggeM/CsirtParser.WPF) (UAC) and [KapeAnalyser.WPF](https://github.com/JuggeM/KapeAnalyser.WPF) (KAPE). The detections are the same; what is new is the shared case layer: one IOC list, one case summary and one case report for the whole incident, so SSH from a Windows host to a Linux server (or the other way round) shows up as lateral movement.
 
+![Collections table: UAC and KAPE collections in one case, ticked for the run, one waiting for the ORC script](docs/case.png)
+
+## Screenshots
+
+| Sources | Findings |
+|---|---|
+| ![Every UAC parser and KAPE module, grouped, with what each one detects](docs/sources.png) | ![All collections' findings in one grid, filtered by severity, host and source](docs/findings.png) |
+| **Run log** | **Case report** |
+| ![Parallel run, every line names its collection](docs/run-log.png) | ![Case report across Linux and Windows hosts, likelihood per finding](docs/case-report.png) |
+| **Case IOCs** | |
+| ![One IOC list for the whole case, defanged values fixed, type detected](docs/iocs.png) | |
+
+Screenshots use the synthetic test cases from `tools\` (all IPs from documentation ranges) and are taken by the Screenshots workflow whenever the app's UI changes; the newest are on the [`screenshots`](https://github.com/JuggeM/CsirtTriage/tree/screenshots/docs) branch.
+
 ## Download
 
 Get `CsirtTriage.exe` and `rules.json` from the [latest release](https://github.com/JuggeM/CsirtTriage/releases) and keep them in the same folder (the zip holds both). The exe is a single self-contained file for 64-bit Windows: no install and no .NET runtime needed. SHA256 checksums are in the release notes.
