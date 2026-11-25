@@ -22,6 +22,8 @@ Screenshots use the synthetic test cases from `tools\` (all IPs from documentati
 
 Get `CsirtTriage.exe` and `rules.json` from the [latest release](https://github.com/JuggeM/CsirtTriage/releases) and keep them in the same folder (the zip holds both). The exe is a single self-contained file for 64-bit Windows: no install and no .NET runtime needed. SHA256 checksums are in the release notes.
 
+**Test case:** every release also has `CsirtTriage-TestCase.zip`, a synthetic incident (all IPs from documentation ranges) across Linux, Windows and Microsoft 365 with collections in every state the app can show, a checklist for every panel and the expected results (`TESTING.md`). Unpack it to a short path such as `C:\Cases\` and open `INC-4711` as the case folder. Build it yourself with `tools\New-FullTestCase.ps1`.
+
 To release a new version, push a tag (`git tag v0.2.0 && git push origin v0.2.0`) or start **Actions → Release → Run workflow** with the version: the release workflow builds, runs the regression tests and publishes the release.
 
 ## Case folder

@@ -54,6 +54,13 @@ jobs:
           if (-not (Test-Path publish\CsirtTriage.exe) -or -not (Test-Path publish\rules.json)) { throw 'CsirtTriage.exe or rules.json missing' }
           Compress-Archive -Path publish\CsirtTriage.exe, publish\rules.json -DestinationPath "CsirtTriage-$version-win-x64.zip"
 
+      - name: Test case zip (built with the released code, expected results from a run)
+        shell: pwsh
+        run: |
+          $cli = (Resolve-Path src\CsirtTriage.Cli\bin\Release\net8.0\csirttriage.dll).Path
+          .\tools\New-FullTestCase.ps1 -Path (Join-Path $env:RUNNER_TEMP 'TestCase') -Exe $cli -Zip CsirtTriage-TestCase.zip
+          if (-not (Test-Path CsirtTriage-TestCase.zip)) { throw 'CsirtTriage-TestCase.zip not built' }
+
       - name: Create release
         shell: pwsh
         env:
@@ -65,6 +72,7 @@ jobs:
           $exeHash = (Get-FileHash publish\CsirtTriage.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           $rulesHash = (Get-FileHash publish\rules.json -Algorithm SHA256).Hash.ToLowerInvariant()
           $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $testHash = (Get-FileHash CsirtTriage-TestCase.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           $notes = @"
           Download ``CsirtTriage.exe`` and ``rules.json`` and keep them in the same folder (or take the zip, which holds both). The exe is a single self-contained file for 64-bit Windows: no install and no .NET runtime needed. ``rules.json`` holds the Windows detection patterns and can be edited.
 
@@ -77,9 +85,12 @@ jobs:
           | CsirtTriage.exe | ``$exeHash`` |
           | rules.json | ``$rulesHash`` |
           | $zip | ``$zipHash`` |
+          | CsirtTriage-TestCase.zip | ``$testHash`` |
+
+          **CsirtTriage-TestCase.zip** is a synthetic incident across Linux (UAC), Windows (KAPE) and Microsoft 365 that exercises every part of the app, with a checklist and the expected results (``TESTING.md``). Unpack it to a short path such as ``C:\Cases\`` and open ``INC-4711`` as the case folder.
           "@
           Set-Content notes.md $notes -Encoding utf8
-          $files = @('publish\CsirtTriage.exe', 'publish\rules.json', $zip)
+          $files = @('publish\CsirtTriage.exe', 'publish\rules.json', $zip, 'CsirtTriage-TestCase.zip')
           # A release created by hand on GitHub first (or a re-run) gets the files and notes instead of failing
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
