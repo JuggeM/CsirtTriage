@@ -12,7 +12,7 @@
 
         <TextBlock Text="Findings" Style="{StaticResource SectionTitle}"/>
 
-        <!-- Filters -->
+        <!-- Filters, each with a label -->
         <Grid Grid.Row="1" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -20,17 +20,30 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=250}"
-                     ToolTip="Search text, detail and artifact (IP, user, path, command…)"/>
-            <ComboBox Grid.Column="1" ItemsSource="{Binding Severities}" SelectedItem="{Binding MinSeverity}" Width="110" Margin="8,0,0,0"
-                      ToolTip="This severity and higher"/>
-            <ComboBox Grid.Column="2" ItemsSource="{Binding Hosts}" SelectedItem="{Binding Host}" Width="130" Margin="8,0,0,0"/>
-            <ComboBox Grid.Column="3" ItemsSource="{Binding Sources}" SelectedItem="{Binding Source}" Width="130" Margin="8,0,0,0"/>
-            <Button Grid.Column="4" Content="Clear" Style="{StaticResource StandardButton}" Command="{Binding ClearFiltersCommand}" Margin="8,0,0,0"/>
-            <Button Grid.Column="5" Content="⟳" Style="{StaticResource StandardButton}" Command="{Binding RefreshCommand}" Margin="6,0,0,0"
-                    ToolTip="Reload from Level2\"/>
+            <StackPanel>
+                <TextBlock Text="Search" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged, Delay=250}"
+                         ToolTip="Finds text in the finding, its detail and artifact: an IP, user, path, command…"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                <TextBlock Text="Severity (and higher)" Style="{StaticResource FieldLabel}"/>
+                <ComboBox ItemsSource="{Binding Severities}" SelectedItem="{Binding MinSeverity}" Width="140"
+                          ToolTip="Shows findings of this severity and higher"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Margin="8,0,0,0">
+                <TextBlock Text="Host" Style="{StaticResource FieldLabel}"/>
+                <ComboBox ItemsSource="{Binding Hosts}" SelectedItem="{Binding Host}" Width="130"/>
+            </StackPanel>
+            <StackPanel Grid.Column="3" Margin="8,0,0,0">
+                <TextBlock Text="Source" Style="{StaticResource FieldLabel}"/>
+                <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding Source}" Width="140"/>
+            </StackPanel>
+            <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Bottom" Margin="8,0,0,0">
+                <Button Content="Clear filters" Style="{StaticResource StandardButton}" Command="{Binding ClearFiltersCommand}"/>
+                <Button Content="⟳ Reload" Style="{StaticResource StandardButton}" Command="{Binding RefreshCommand}" Margin="6,0,0,0"
+                        ToolTip="Read the findings again from Level2\ (after a run they reload by themselves)"/>
+            </StackPanel>
         </Grid>
 
         <DataGrid Grid.Row="2" ItemsSource="{Binding View}" SelectedItem="{Binding Selected}" AutoGenerateColumns="False"

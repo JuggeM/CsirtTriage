@@ -33,7 +33,7 @@ CaseFolder\
 ├── Decompressed\          extracted collections (UAC: by CsirtTriage; ORC: by your processing script)
 ├── Processed\             parsed data, level 1
 │   ├── ORC_Server_FS01_…\  KAPE module output, written by the ORC processing script (read only)
-│   ├── uac-web01-linux-…\  Normalized_<SOURCE>.csv per log source (UAC)
+│   ├── uac-web01-linux-…\  Normalized_<SOURCE>.csv per log source, ProcessedBodyFile.csv (scored file timeline) (UAC)
 │   └── M365\                Normalized_UAL.csv: every audit record with its AuditData
 ├── iocs.txt               case IOC list (IOCs panel)
 └── Level2\                analysis results
@@ -50,8 +50,8 @@ CaseFolder\
         ├── Logons.csv              inbound logons by source (SSH, RDP, network, admin shares)
         ├── Sessions.csv            logon sessions with start, end and duration
         ├── host.txt                host name, IPs, collection type and source folder
-        └── UAC only: Sessions_Full.csv (every session type), ProcessedBodyFile.csv (scored file timeline),
-            Sha1Candidates.csv (executables worth a hash lookup), DockerContainers.csv
+        └── UAC only: Sessions_Full.csv (every session type), Sha1Candidates.csv (executables worth a hash lookup),
+            DockerContainers.csv
 ```
 
 Windows collections are processed by your ORC script (ORC → KAPE `!EZParser` → `Processed\<collection>`); CsirtTriage only reads that output. An ORC collection without KAPE output yet is listed as *waiting for KAPE*.

@@ -74,6 +74,7 @@ foreach ($c in $web, $db, $app, $fil) {
            (Test-Path (Join-Path $out 'Findings.csv')) -and (Test-Path (Join-Path $out 'host.txt'))) "$c analysed into Level2\"
     Check ((Get-ChildItem (Join-Path $processed $c) -Filter 'Normalized_*.csv').Count -ge 5) "$c normalised CSVs in Processed\"
     Check (-not (Get-ChildItem $out -Filter 'Normalized_*.csv')) "$c no normalised CSVs in Level2\"
+    Check ((Test-Path (Join-Path (Join-Path $processed $c) 'ProcessedBodyFile.csv')) -and -not (Test-Path (Join-Path $out 'ProcessedBodyFile.csv'))) "$c ProcessedBodyFile.csv in Processed\, not Level2\"
     Check (-not (Test-Path (Join-Path $out 'QuickWins.txt'))) "$c no QuickWins.txt"
 }
 Check (-not (Get-ChildItem $processed -Recurse -Filter 'Findings.csv')) 'no analysis results in Processed\'

@@ -1271,7 +1271,8 @@ public class ParserOrchestrator
         var parsed = BodyFileProcessor.ProcessBodyFile(bodyfilePath, outputDir);
 
         QuickWinsHeader.EnsureHeader(outputDir, DateTime.UtcNow, parsed.FirstLogUtc, parsed.LastLogUtc);
-        QuickWinsAppend.WriteProcessedBodyFileCsv(outputDir, parsed);
+        // Parsed data (the scored file timeline) goes next to the normalised logs in Processed\<collection>
+        QuickWinsAppend.WriteProcessedBodyFileCsv(_processedDir, parsed);
         QuickWinsAppend.AppendBodyFileFindings(outputDir, parsed.Findings);
         foreach (var f in parsed.Findings)
             _collectedFindings.Add(("BODYFILE", f));

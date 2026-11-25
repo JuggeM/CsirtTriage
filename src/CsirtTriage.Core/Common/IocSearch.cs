@@ -100,8 +100,8 @@ public static class IocSearch
 
     // ── UAC ──────────────────────────────────────────────────────────
     /// <summary>
-    /// A UAC collection: its normalised CSVs (Processed\&lt;collection&gt;), the
-    /// scored body file (Level2\&lt;collection&gt;) and the raw live response
+    /// A UAC collection: its normalised CSVs and the scored body file
+    /// (Processed\&lt;collection&gt;), and the raw hash list and live response
     /// output under the extracted collection.
     /// </summary>
     public static List<IocHit> SearchUacCollection(string processedDir, string resultsDir, string? rawRoot,
@@ -151,7 +151,7 @@ public static class IocSearch
             }
 
         // Body file: Path,Size,Mode,UID,GID,MD5,AccessTimeUtc,ModTimeUtc,ChangeTimeUtc,BirthTimeUtc
-        var body = Path.Combine(resultsDir, "ProcessedBodyFile.csv");
+        var body = Path.Combine(processedDir, "ProcessedBodyFile.csv");
         if (File.Exists(body))
         {
             bool header = true;

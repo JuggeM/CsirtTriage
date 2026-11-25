@@ -481,14 +481,9 @@ namespace CsirtTriage.Core.Reporting
             return "Low";
         }
 
-        public static string SuggestTitle(CaseReportData data)
-        {
-            var top = data.Findings.Where(f => f.Include).OrderByDescending(f => f.Likelihood).ThenBy(f => f.Rank).FirstOrDefault();
-            if (top == null) return string.IsNullOrWhiteSpace(data.CaseName) ? "Case report" : data.CaseName;
-            var affected = data.Findings.Where(f => f.Include).Select(f => f.Host).Distinct().Count();
-            return $"{Headline(top.Text, 70)} on {top.Host}" +
-                   (affected > 1 ? $" and {affected - 1} other host{(affected > 2 ? "s" : "")}" : "");
-        }
+        /// <summary>The report title: the case name (the analyst can still change it in the panel).</summary>
+        public static string SuggestTitle(CaseReportData data) =>
+            string.IsNullOrWhiteSpace(data.CaseName) ? "Case report" : data.CaseName.Trim();
 
         /// <summary>A first draft of the bottom line, in estimative language, for the analyst to edit.</summary>
         public static string DraftBluf(CaseReportData data)
@@ -621,8 +616,10 @@ namespace CsirtTriage.Core.Reporting
                 .OrderByDescending(f => f.Likelihood).ThenBy(f => f.Rank).ThenBy(f => f.TimeUtc ?? DateTime.MaxValue)
                 .ToList();
             var times = inc.Where(f => f.TimeUtc.HasValue).Select(f => f.TimeUtc!.Value).ToList();
+            var title = string.IsNullOrWhiteSpace(notes.Title) ? SuggestTitle(data) : notes.Title.Trim();
             var meta = new List<string>();
-            if (!string.IsNullOrWhiteSpace(data.CaseName)) meta.Add(data.CaseName);
+            // The case name is the title by default; repeat it under the title only when the analyst changed the title
+            if (!string.IsNullOrWhiteSpace(data.CaseName) && !title.Equals(data.CaseName.Trim(), StringComparison.OrdinalIgnoreCase)) meta.Add(data.CaseName);
             if (!string.IsNullOrWhiteSpace(data.Analyst)) meta.Add("Analyst: " + data.Analyst);
             meta.Add($"Generated {data.GeneratedUtc:yyyy-MM-dd HH:mm} UTC");
             var steps = Lines(notes.NextSteps).Select(s =>
@@ -633,7 +630,7 @@ namespace CsirtTriage.Core.Reporting
 
             return new Content(
                 data,
-                string.IsNullOrWhiteSpace(notes.Title) ? SuggestTitle(data) : notes.Title.Trim(),
+                title,
                 string.IsNullOrWhiteSpace(notes.Severity) ? SuggestSeverity(data) : notes.Severity,
                 string.IsNullOrWhiteSpace(notes.Status) ? "Active" : notes.Status,
                 meta,
