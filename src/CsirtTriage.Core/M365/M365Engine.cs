@@ -18,6 +18,7 @@ public sealed class M365Engine
 {
     public const string ProcessedMarkerFile = ".processed";
     public const string NormalizedFile = "Normalized_UAL.csv";
+    public const string NormalizedSignInFile = "Normalized_ENTRA.csv";
 
     private readonly TriageSettings _settings;
     private readonly Action<string> _log;
@@ -36,6 +37,7 @@ public sealed class M365Engine
         (UalAnalyser.Directory, "Entra ID directory operations", _settings.M365.AnalyseDirectory),
         (UalAnalyser.Files, "SharePoint / OneDrive", _settings.M365.AnalyseFiles),
         (UalAnalyser.MailAccess, "MailItemsAccessed", _settings.M365.AnalyseMailAccess),
+        (EntraSignInAnalyser.Source, "Entra ID sign-in log export (interactive, non-interactive)", _settings.M365.AnalyseEntraSignIns),
     };
 
     /// <summary>Which report section a record belongs to (also used for the coverage table).</summary>
@@ -71,6 +73,9 @@ public sealed class M365Engine
         var rules = M365Rules.Load(_settings.Kape.ResolveRulesPath(), _log);
         var ctx = new AnalysisContext(_settings.Kape, folder, _log, ct);
         var analyser = new UalAnalyser(_settings.M365, rules, ctx);
+        var signIns = new EntraSignInAnalyser(_settings.M365, rules, ctx);
+        StreamWriter? signInNorm = null;
+        long signInRows = 0;
         var domains = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         long rows = 0;
 
@@ -79,6 +84,44 @@ public sealed class M365Engine
             norm.WriteLine("Timestamp,Hostname,LogType,Daemon,User,IP,Message,Severity,Raw");
             foreach (var file in CsvFiles(folder))
             {
+                // Unified audit log and Entra sign-in exports sit in the same folder; the header tells them apart
+                EntraSignIn.FileKind kind;
+                using (var probe = new CsvReader(file)) kind = EntraSignIn.Detect(probe.Header);
+                if (kind == EntraSignIn.FileKind.AuthDetails)
+                {
+                    _log($"[{name}] {Path.GetFileName(file)}: Entra authentication details — not used (the sign-in files hold what is needed).");
+                    continue;
+                }
+                if (kind == EntraSignIn.FileKind.SignIns)
+                {
+                    if (!_settings.M365.AnalyseEntraSignIns) { _log($"[{name}] {Path.GetFileName(file)}: Entra sign-ins switched off in Sources — skipped."); continue; }
+                    signInNorm ??= NewNormalized(Path.Combine(processedDir, NormalizedSignInFile));
+                    long n = 0;
+                    foreach (var s in EntraSignIn.ReadCsv(file))
+                    {
+                        if ((++n & 0x3FF) == 0) ct.ThrowIfCancellationRequested();
+                        var cov = ctx.CoverageFor(EntraSignInAnalyser.Source);
+                        cov.Rows++;
+                        cov.See(s.TimeUtc);
+                        if (!cov.Files.Contains(Path.GetFileName(file))) cov.Files.Add(Path.GetFileName(file));
+                        if (s.User.LastIndexOf('@') is int sat and >= 0)
+                        {
+                            var d = s.User[(sat + 1)..];
+                            domains[d] = domains.GetValueOrDefault(d) + 1;
+                        }
+                        signInNorm.WriteLine(Csv.Row(
+                            s.TimeUtc?.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture) ?? "",
+                            "", "ENTRA", s.Application, s.User, s.Ip,
+                            $"{(s.Interactive ? "Interactive" : "Non-interactive")} sign-in | {s.Status}{(s.ErrorCode is "" or "0" ? "" : $" {s.ErrorCode} {s.FailureReason}")} | {s.Location} | {s.ClientApp} | {s.AuthRequirement}",
+                            s.Succeeded ? "Info" : "Failed",
+                            $"ASN={s.Asn}; Session={s.SessionId}; UA={s.UserAgent}; MFA={s.MfaResult} {s.MfaMethod}; CA={s.ConditionalAccess}; OS={s.Os}; Browser={s.Browser}"));
+                        signIns.See(s);
+                    }
+                    signInRows += n;
+                    _log($"[{name}] {Path.GetFileName(file)}: {n:N0} Entra sign-in(s)");
+                    continue;
+                }
+
                 _log($"[{name}] Reading {Path.GetFileName(file)}");
                 long before = rows;
                 foreach (var r in UalRecord.ReadCsv(file, _log))
@@ -102,13 +145,16 @@ public sealed class M365Engine
                 _log($"[{name}] {Path.GetFileName(file)}: {rows - before:N0} record(s)");
             }
         }
-        if (rows == 0) _log($"[WARN] [{name}] No audit records found in {folder} (expected Purview audit search CSV exports).");
+        signInNorm?.Dispose();
+        if (rows == 0 && signInRows == 0)
+            _log($"[WARN] [{name}] No audit records or sign-ins found in {folder} (expected Purview audit search or Entra sign-in CSV exports).");
         analyser.Complete();
+        signIns.Complete();
 
         // The tenant's name: its most used mail domain, a custom domain before *.onmicrosoft.com
         var tenant = domains.OrderBy(kv => kv.Key.EndsWith(".onmicrosoft.com", StringComparison.OrdinalIgnoreCase))
                             .ThenByDescending(kv => kv.Value).Select(kv => kv.Key).FirstOrDefault() ?? name;
-        _log($"[{name}] Tenant: {tenant}, {rows:N0} record(s)");
+        _log($"[{name}] Tenant: {tenant}, {rows:N0} audit record(s), {signInRows:N0} sign-in(s)");
 
         HostReport.Write(outDir, new CollectionInfo(tenant, name, CollectionKind.M365, folder, processedDir, Array.Empty<string>()),
             ctx, Modules, _settings.CaseName, _settings.Analyst);
@@ -117,6 +163,13 @@ public sealed class M365Engine
         try { QuickWinsRtf.Convert(outDir); }
         catch (Exception ex) { _log($"[WARN] [{name}] RTF conversion failed: {ex.Message}"); }
         File.WriteAllText(Path.Combine(outDir, ProcessedMarkerFile), $"Processed {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}Z{Environment.NewLine}");
+    }
+
+    private static StreamWriter NewNormalized(string path)
+    {
+        var w = new StreamWriter(path, false, new UTF8Encoding(false));
+        w.WriteLine("Timestamp,Hostname,LogType,Daemon,User,IP,Message,Severity,Raw");
+        return w;
     }
 
     /// <summary>One readable line per record for the normalised CSV: operation and its main parameters.</summary>

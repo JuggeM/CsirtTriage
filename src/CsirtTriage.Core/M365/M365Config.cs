@@ -8,6 +8,8 @@ public class M365Config
     public bool AnalyseDirectory { get; set; } = true;
     public bool AnalyseFiles { get; set; } = true;
     public bool AnalyseMailAccess { get; set; } = true;
+    /// <summary>Entra ID sign-in log exports (InteractiveSignIns / NonInteractiveSignIns CSV).</summary>
+    public bool AnalyseEntraSignIns { get; set; } = true;
 
     /// <summary>Failed sign-ins from one IP to one account before it counts as brute force.</summary>
     public int BruteForceThreshold { get; set; } = 10;
@@ -19,4 +21,8 @@ public class M365Config
     public int DownloadsPerHour { get; set; } = 100;
     /// <summary>Mail items one account accesses within an hour (MailItemsAccessed) before it is flagged.</summary>
     public int MailItemsPerHour { get; set; } = 500;
+    /// <summary>Successful sign-ins in two countries closer together than this are impossible travel.</summary>
+    public double ImpossibleTravelHours { get; set; } = 2;
+    /// <summary>MFA prompts denied or failed from one IP before it counts as MFA fatigue.</summary>
+    public int MfaFatigueThreshold { get; set; } = 3;
 }

@@ -157,5 +157,8 @@ public static class SourceCatalog
             new(CollectionKind.M365, "Unified audit log", "Mail access", "MailItemsAccessed",
                 "Bursts of mail items accessed in one mailbox within an hour (mailbox read through a stolen session or app), with the client IPs.",
                 () => s.M365.AnalyseMailAccess, v => s.M365.AnalyseMailAccess = v),
+            new(CollectionKind.M365, "Entra ID sign-in logs", "Sign-in log export", "InteractiveSignIns_*.csv, NonInteractiveSignIns_*.csv",
+                "Per account: sign-ins from a new country (critical from a hosting provider or single-factor), impossible travel, one session used from two countries (stolen session token, AiTM), correct password stopped by MFA, MFA fatigue, brute force, legacy protocols (IMAP, POP, SMTP…), scripted clients, Conditional Access blocks and risky sign-ins.",
+                () => s.M365.AnalyseEntraSignIns, v => s.M365.AnalyseEntraSignIns = v),
     };
 }

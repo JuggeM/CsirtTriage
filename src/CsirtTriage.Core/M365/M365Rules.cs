@@ -18,6 +18,10 @@ public sealed class M365Rules
     public Regex RuleKeywords { get; private init; } = DefaultRuleKeywords;
     /// <summary>Admin roles whose assignment is critical.</summary>
     public HashSet<string> PrivilegedRoles { get; private init; } = DefaultPrivilegedRoles;
+    /// <summary>Autonomous system numbers of hosting and VPS providers (sign-ins from servers, not homes or offices).</summary>
+    public HashSet<string> HostingAsns { get; private init; } = DefaultHostingAsns;
+    /// <summary>Entra "Client app" values of legacy protocols that can't do MFA.</summary>
+    public HashSet<string> LegacyClientApps { get; private init; } = DefaultLegacyClientApps;
 
     private static readonly Regex DefaultUserAgents = new(
         @"BAV2ROPC|python-requests|python-urllib|Go-http-client|axios|curl/|Wget|okhttp|PostmanRuntime|aiohttp|libwww-perl|Java/|node-fetch|AADInternals|ROADtools|TokenTactics|GraphRunner|evilginx",
@@ -35,6 +39,36 @@ public sealed class M365Rules
         "Conditional Access Administrator", "Compliance Administrator", "eDiscovery Manager",
     };
 
+    private static readonly HashSet<string> DefaultHostingAsns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "14061",  // DigitalOcean
+        "16509", "14618", // Amazon AWS
+        "15169", "396982", // Google Cloud
+        "24940",  // Hetzner
+        "16276",  // OVH
+        "63949",  // Linode / Akamai
+        "20473",  // Vultr (Choopa)
+        "9009",   // M247
+        "212238", // Datacamp (CDN77)
+        "60068",  // CDN77
+        "51167",  // Contabo
+        "197540", // netcup
+        "36352",  // ColoCrossing
+        "62240",  // Clouvider
+        "209",    // Lumen (also used by VPS resellers)
+        "8100",   // QuadraNet
+        "46562",  // Performive
+        "40021",  // Contabo US
+        "399629", // BL Networks
+        "212815", // Dyjix
+    };
+    private static readonly HashSet<string> DefaultLegacyClientApps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "IMAP4", "IMAP", "POP3", "POP", "Authenticated SMTP", "SMTP", "Exchange ActiveSync", "Exchange Online PowerShell",
+        "Autodiscover", "Exchange Web Services", "MAPI Over HTTP", "Offline Address Book", "Outlook Anywhere (RPC over HTTP)",
+        "Reporting Web Services", "Other clients",
+    };
+
     /// <summary>The built-in rules (also used for whatever rules.json leaves out).</summary>
     public static readonly M365Rules Default = new();
 
@@ -44,6 +78,8 @@ public sealed class M365Rules
         public List<string>? HiddenFolders { get; set; }
         public string? RuleKeywords { get; set; }
         public List<string>? PrivilegedRoles { get; set; }
+        public List<string>? HostingAsns { get; set; }
+        public List<string>? LegacyClientApps { get; set; }
     }
     private sealed class FileDto { public Dto? M365 { get; set; } }
 
@@ -74,6 +110,8 @@ public sealed class M365Rules
             HiddenFolders = d.HiddenFolders is { Count: > 0 } f ? new(f, StringComparer.OrdinalIgnoreCase) : Default.HiddenFolders,
             RuleKeywords = Rx(d.RuleKeywords, Default.RuleKeywords, "ruleKeywords"),
             PrivilegedRoles = d.PrivilegedRoles is { Count: > 0 } r ? new(r, StringComparer.OrdinalIgnoreCase) : Default.PrivilegedRoles,
+            HostingAsns = d.HostingAsns is { Count: > 0 } a ? new(a.Select(x => x.Trim().TrimStart('A', 'S', 'a', 's')), StringComparer.OrdinalIgnoreCase) : Default.HostingAsns,
+            LegacyClientApps = d.LegacyClientApps is { Count: > 0 } l ? new(l, StringComparer.OrdinalIgnoreCase) : Default.LegacyClientApps,
         };
     }
 }

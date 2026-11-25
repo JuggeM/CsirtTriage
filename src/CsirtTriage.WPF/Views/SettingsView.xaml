@@ -108,7 +108,11 @@
                 <TextBox Text="{Binding Settings.M365.DownloadsPerHour, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
                 <TextBlock Text="Mail access burst: mail items accessed in one mailbox within an hour" Style="{StaticResource FieldLabel}"/>
                 <TextBox Text="{Binding Settings.M365.MailItemsPerHour, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
-                <TextBlock Text="User agents, hidden folders, BEC keywords and privileged roles are in the m365 section of rules.json (Windows detection below: Edit)." Style="{StaticResource Hint}"/>
+                <TextBlock Text="Impossible travel: successful sign-ins in two countries less than this many hours apart (Entra sign-in logs)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.M365.ImpossibleTravelHours, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="MFA fatigue: MFA prompts denied or failed from one IP (Entra sign-in logs)" Style="{StaticResource FieldLabel}"/>
+                <TextBox Text="{Binding Settings.M365.MfaFatigueThreshold, UpdateSourceTrigger=LostFocus}" Style="{StaticResource Number}"/>
+                <TextBlock Text="User agents, hidden folders, BEC keywords, privileged roles, hosting providers' AS numbers and legacy client apps are in the m365 section of rules.json (Windows detection below: Edit)." Style="{StaticResource Hint}"/>
             </StackPanel>
         </Expander>
 

@@ -29,12 +29,12 @@ To release a new version, push a tag (`git tag v0.2.0 && git push origin v0.2.0`
 ```
 CaseFolder\
 ├── Uploads\               UAC archives (uac-*.tar.gz) and DFIR ORC archives as received
-│   └── M365\               Purview audit search CSV exports (one collection; or one subfolder per export)
+│   └── M365\               Purview audit log and Entra sign-in log CSV exports (see docs/M365.md)
 ├── Decompressed\          extracted collections (UAC: by CsirtTriage; ORC: by your processing script)
 ├── Processed\             parsed data, level 1
 │   ├── ORC_Server_FS01_…\  KAPE module output, written by the ORC processing script (read only)
 │   ├── uac-web01-linux-…\  Normalized_<SOURCE>.csv per log source, ProcessedBodyFile.csv (scored file timeline) (UAC)
-│   └── M365\                Normalized_UAL.csv: every audit record with its AuditData
+│   └── M365\                Normalized_UAL.csv (audit records with AuditData), Normalized_ENTRA.csv (sign-ins)
 ├── iocs.txt               case IOC list (IOCs panel)
 └── Level2\                analysis results
     ├── CaseSummary.txt         hosts ranked, lateral movement, sources logging on to several hosts, IOCs across hosts, case timeline
@@ -166,7 +166,15 @@ Purview **Audit** search exported as CSV (current layout with `RecordId, Creatio
 | M365-FILES | `FileDownloaded`, `AnonymousLinkCreated` | Mass downloads (files per account per hour), 'Anyone' links |
 | M365-MAILACCESS | `MailItemsAccessed` | Mail items accessed per mailbox per hour |
 
-Thresholds are in **Settings → Microsoft 365 detection**; user agents, hidden folders, BEC keywords and privileged roles in the `m365` section of `rules.json`. Entra ID sign-in log exports are not read yet.
+Entra ID **sign-in log** exports (CSV, interactive and non-interactive, usually for the few accounts under investigation) go in the same folder and are told apart by their columns:
+
+| Source | Export | What it detects |
+|---|---|---|
+| ENTRA-SIGNIN | `InteractiveSignIns_*.csv`, `NonInteractiveSignIns_*.csv` | Per account: new country (critical from a hosting provider or single-factor), impossible travel, one session used from two countries (stolen session token, AiTM), correct password stopped by MFA, MFA fatigue, brute force, legacy protocols, scripted clients, Conditional Access blocks, risky sign-ins |
+
+Thresholds are in **Settings → Microsoft 365 detection**; user agents, hidden folders, BEC keywords, privileged roles, hosting providers' AS numbers and legacy client apps in the `m365` section of `rules.json`.
+
+**[What to collect from Microsoft 365, how, and what each finding means → docs/M365.md](docs/M365.md)**
 
 KAPE detection patterns (tools, staging folders, command lines, web attacks, suspicious domains) are in `rules.json` next to the exe, so analysts can edit them; **Settings → Windows detection** reloads it.
 

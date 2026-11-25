@@ -73,26 +73,31 @@ public static class IocSearch
     public static List<IocHit> SearchM365(string processedDir, IocMatcher matcher, CancellationToken ct = default)
     {
         var hits = new Dictionary<Ioc, IocHit>();
-        var file = Path.Combine(processedDir, M365.M365Engine.NormalizedFile);
-        if (matcher.IsEmpty || !File.Exists(file)) return new();
-        bool header = true;
-        long n = 0;
-        foreach (var line in SafeLines(file))
+        if (matcher.IsEmpty) return new();
+        foreach (var file in new[] { M365.M365Engine.NormalizedFile, M365.M365Engine.NormalizedSignInFile }.Select(f => Path.Combine(processedDir, f)))
         {
-            if (header) { header = false; continue; }
-            if ((++n & 0x3FFF) == 0) ct.ThrowIfCancellationRequested();
-            var found = matcher.Match(line);
-            if (found.Count == 0) continue;
-            var f = SplitCsv(line);
-            DateTime? ts = f.Count > 0 ? M365.UalRecord.ParseTime(f[0]) : null;
-            var source = f.Count > 3 && f[3].Length > 0
-                ? "M365-" + (f[3].Equals("AzureActiveDirectory", StringComparison.OrdinalIgnoreCase) ? "ENTRA" : f[3].ToUpperInvariant())
-                : "M365";
-            var sample = f.Count > 6 ? $"{(f.Count > 4 ? f[4] + ": " : "")}{f[6]}" : line;
-            foreach (var ioc in found)
+            if (!File.Exists(file)) continue;
+            bool header = true;
+            long n = 0;
+            foreach (var line in SafeLines(file))
             {
-                if (!hits.TryGetValue(ioc, out var h)) hits[ioc] = h = new IocHit { Ioc = ioc };
-                h.Add(source, ts, sample);
+                if (header) { header = false; continue; }
+                if ((++n & 0x3FFF) == 0) ct.ThrowIfCancellationRequested();
+                var found = matcher.Match(line);
+                if (found.Count == 0) continue;
+                // Timestamp,Hostname,LogType,Daemon,User,IP,Message,Severity,Raw
+                var f = SplitCsv(line);
+                DateTime? ts = f.Count > 0 ? M365.UalRecord.ParseTime(f[0]) : null;
+                var source = f.Count > 2 && f[2] == "ENTRA" ? M365.EntraSignInAnalyser.Source
+                    : f.Count > 3 && f[3].Length > 0
+                        ? "M365-" + (f[3].Equals("AzureActiveDirectory", StringComparison.OrdinalIgnoreCase) ? "ENTRA" : f[3].ToUpperInvariant())
+                        : "M365";
+                var sample = f.Count > 6 ? $"{(f.Count > 4 ? f[4] + ": " : "")}{f[6]}" : line;
+                foreach (var ioc in found)
+                {
+                    if (!hits.TryGetValue(ioc, out var h)) hits[ioc] = h = new IocHit { Ioc = ioc };
+                    h.Add(source, ts, sample);
+                }
             }
         }
         return Ordered(hits);

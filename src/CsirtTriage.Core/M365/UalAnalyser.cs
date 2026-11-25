@@ -76,7 +76,7 @@ public sealed class UalAnalyser
         // Successful sign-in
         if (ip.Length > 0)
         {
-            _ctx.RecordLogon(user, "M365", "", ip, "Entra ID sign-in", r.TimeUtc);
+            _ctx.RecordLogon(user, "M365", "", ip, "Audit log (UserLoggedIn)", r.TimeUtc);
             if (r.TimeUtc is DateTime t)
             {
                 var dk = (user.ToLowerInvariant(), t.Date);

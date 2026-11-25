@@ -6,10 +6,13 @@
 .DESCRIPTION
     A business e-mail compromise of the tenant corp.example, in the same
     timeline and from the same attacker IP (203.0.113.45) as the UAC and KAPE
-    test cases, plus normal activity as noise. Two files: the current Purview
-    export layout (RecordId, CreationDate, RecordType, Operation, UserId,
-    AuditData, …) and the classic one (CreationDate, UserIds, Operations,
-    AuditData). All IPs and domains are from documentation ranges.
+    test cases, plus normal activity as noise. Two audit log files: the
+    current Purview export layout (RecordId, CreationDate, RecordType,
+    Operation, UserId, AuditData, …) and the classic one (CreationDate,
+    UserIds, Operations, AuditData). Plus an Entra ID sign-in log export for
+    the two accounts under investigation (jdoe, cfo): interactive,
+    non-interactive and the AuthDetails file. All IPs and domains are from
+    documentation ranges.
 
     Scenario                                          Expected finding
     6 accounts fail from 198.51.100.77                password spray (HIGH)
@@ -31,6 +34,16 @@
     120 files downloaded in one hour                   mass download (HIGH)
     3 'Anyone' links                                   Anyone link (MEDIUM)
     650 mail items accessed in one hour                mail access burst (HIGH)
+
+    Entra sign-ins (source ENTRA-SIGNIN)
+    jdoe: VPS in NL 15 min after a sign-in in SE      new country (CRITICAL), impossible travel (HIGH)
+    jdoe: 12 failures then success from the VPS       brute force succeeded (CRITICAL)
+    jdoe: morning session used from the VPS            session in two countries (HIGH)
+    jdoe: password right, MFA required (DE)            password known (HIGH)
+    jdoe: blocked by Conditional Access (NG)           conditional access (MEDIUM)
+    cfo:  4 MFA denials then success (AWS, US)         MFA fatigue succeeded (CRITICAL), new country (CRITICAL)
+    cfo:  IMAP4 from the VPS 4 min later (NL)          legacy authentication (HIGH), new country (CRITICAL), impossible travel (HIGH)
+    cfo:  python-requests with the token               scripted client (HIGH)
 
 .PARAMETER CaseFolder
     Case folder to add Uploads\M365 to (created if needed).
@@ -162,4 +175,51 @@ $lines.Clear()
 $lines.Add('CreationDate,UserIds,Operations,AuditData')
 foreach ($r in $classic) { $lines.Add((@($r.Time.ToString('M/d/yyyy h:mm:ss tt', [Globalization.CultureInfo]::InvariantCulture), $r.User, $r.Op, $r.Json) | ForEach-Object { Q $_ }) -join ',') }
 [IO.File]::WriteAllText((Join-Path $dir 'AuditLog_classic_20261104.csv'), ($lines -join "`r`n") + "`r`n", $utf8)
+
+# ── Entra ID sign-in log export for the two accounts under investigation ──
+# As downloaded from Entra admin center → Sign-in logs (filtered on the user), CSV.
+$signInHeader = 'Date (UTC),Request ID,User agent,Correlation ID,User ID,User,Username,User type,Cross tenant access type,Incoming token type,Authentication Protocol,Unique token identifier,Original transfer method,Client credential type,Application,Application ID,Resource,Resource ID,Resource tenant ID,Home tenant ID,Home tenant name,IP address,Location,Status,Sign-in error code,Failure reason,Client app,Device ID,Browser,Operating System,Compliant,Managed,Join Type,Multifactor authentication result,Multifactor authentication auth method,Multifactor authentication auth detail,Authentication requirement,Sign-in identifier,Session ID,IP address (seen by resource),Through Global Secure Access,Global Secure Access IP address,Autonomous system number,Flagged for review,Token issuer type,Token issuer name,Latency,Conditional Access,Managed Identity type'
+$chrome = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
+function SignInRow([datetime] $t, [string] $user, [string] $ip, [string] $location, [string] $asn, [string] $session,
+                   [string] $status = 'Success', [string] $code = '0', [string] $reason = 'Other.', [string] $client = 'Browser',
+                   [string] $auth = 'Multifactor authentication', [string] $ua = $chrome, [string] $ca = 'Success') {
+    $mfa = if ($auth -like 'Multi*' -and $status -eq 'Success') { 'MFA requirement satisfied by claim in the token' } else { '' }
+    $v = @($t.ToString('yyyy-MM-ddTHH:mm:ssZ'), [guid]::NewGuid(), $ua, [guid]::NewGuid(), [guid]::NewGuid(), ($user -split '@')[0], $user, 'Member', 'none', 'none',
+           'none', [guid]::NewGuid(), 'none', 'none', 'OfficeHome', '4765445b-32c6-49b0-83e6-1d93765276ca', 'Office 365 Exchange Online', '00000002-0000-0ff1-ce00-000000000000',
+           $org, $org, 'Corp', $ip, $location, $status, $code, $reason, $client, '', $(if ($ua -like 'Mozilla*') { 'Chrome 130.0' } else { '' }),
+           $(if ($ua -like 'Mozilla*') { 'Windows10' } else { '' }), 'False', 'False', '', $mfa, '', '', $auth, $user, $session, $ip, 'False', '', $asn, 'False',
+           'AzureAD', '', '120', $ca, '')
+    ($v | ForEach-Object { Q ([string]$_) }) -join ','
+}
+$se = 'Stockholm, Stockholm, SE'; $nl = 'Amsterdam, Noord-Holland, NL'
+$interactive = [System.Collections.Generic.List[string]]::new(); $interactive.Add($signInHeader)
+$nonInteractive = [System.Collections.Generic.List[string]]::new(); $nonInteractive.Add($signInHeader)
+foreach ($d in 0..3) {
+    foreach ($u in 'jdoe@corp.example', 'cfo@corp.example') {
+        $interactive.Add((SignInRow $base.AddDays($d).AddHours(7) $u '192.0.2.10' $se '3301' "sess-$u-day$d"))
+        $nonInteractive.Add((SignInRow $base.AddDays($d).AddHours(13) $u '192.0.2.10' $se '3301' "sess-$u-day$d"))
+    }
+}
+# jdoe: normal sign-in, brute force, then a sign-in from a VPS in NL 15 minutes later
+$interactive.Add((SignInRow $base.AddHours(8).AddMinutes(50) 'jdoe@corp.example' '192.0.2.10' $se '3301' 'sess-jdoe-1'))
+foreach ($i in 0..11) { $interactive.Add((SignInRow $base.AddHours(9).AddSeconds($i * 20) 'jdoe@corp.example' '203.0.113.45' $nl '14061' '' 'Failure' '50126' 'Error validating credentials due to invalid username or password.')) }
+$interactive.Add((SignInRow $base.AddHours(9).AddMinutes(5) 'jdoe@corp.example' '203.0.113.45' $nl '14061' 'sess-jdoe-2'))
+# jdoe's morning session token replayed from the attacker's server (AiTM)
+$nonInteractive.Add((SignInRow $base.AddHours(10).AddMinutes(15) 'jdoe@corp.example' '203.0.113.45' $nl '14061' 'sess-jdoe-1'))
+# jdoe: correct password from Germany, stopped by MFA; blocked by Conditional Access from Nigeria
+$interactive.Add((SignInRow $base.AddDays(1).AddHours(3) 'jdoe@corp.example' '198.51.100.201' 'Frankfurt am Main, Hessen, DE' '3320' '' 'Interrupted' '50074' 'Strong Authentication is required.'))
+$interactive.Add((SignInRow $base.AddDays(1).AddHours(4) 'jdoe@corp.example' '203.0.113.50' 'Lagos, Lagos, NG' '29465' '' 'Failure' '53003' 'Access has been blocked by Conditional Access policies.' 'Browser' 'Single-factor authentication' $chrome 'Failure'))
+# cfo: MFA fatigue from AWS in the US, then success; IMAP from the VPS; a python script with the token
+foreach ($i in 0..3) { $interactive.Add((SignInRow $base.AddHours(9).AddMinutes(30 + $i) 'cfo@corp.example' '198.51.100.200' 'Ashburn, Virginia, US' '14618' '' 'Failure' '500121' 'Authentication failed during strong authentication request.')) }
+$interactive.Add((SignInRow $base.AddHours(9).AddMinutes(36) 'cfo@corp.example' '198.51.100.200' 'Ashburn, Virginia, US' '14618' 'sess-cfo-2'))
+$interactive.Add((SignInRow $base.AddHours(9).AddMinutes(40) 'cfo@corp.example' '203.0.113.46' $nl '14061' 'sess-cfo-3' 'Success' '0' 'Other.' 'IMAP4' 'Single-factor authentication' 'BAV2ROPC'))
+$nonInteractive.Add((SignInRow $base.AddHours(10) 'cfo@corp.example' '203.0.113.46' $nl '14061' 'sess-cfo-3' 'Success' '0' 'Other.' 'Mobile Apps and Desktop clients' 'Single-factor authentication' 'python-requests/2.31.0'))
+
+[IO.File]::WriteAllText((Join-Path $dir 'InteractiveSignIns_2026-11-01_2026-11-04.csv'), ($interactive -join "`r`n") + "`r`n", $utf8)
+[IO.File]::WriteAllText((Join-Path $dir 'NonInteractiveSignIns_2026-11-01_2026-11-04.csv'), ($nonInteractive -join "`r`n") + "`r`n", $utf8)
+# The AuthDetails file comes with the download; CsirtTriage skips it
+[IO.File]::WriteAllText((Join-Path $dir 'InteractiveSignIns_AuthDetails_2026-11-01_2026-11-04.csv'),
+    "Date (UTC),Request ID,Authentication method,Authentication method detail,Succeeded,Result detail,Requirement`r`n" +
+    ((Q $base.AddHours(7).ToString('yyyy-MM-ddTHH:mm:ssZ')) + ',' + (Q ([guid]::NewGuid())) + ',"Password","Password in the cloud","True","Correct password","Primary authentication"') + "`r`n", $utf8)
+
 Write-Host "M365 test export written to $dir ($($current.Count) + $($classic.Count) records)"
