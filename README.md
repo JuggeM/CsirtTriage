@@ -13,8 +13,8 @@ It replaces [CsirtParser.WPF](https://github.com/JuggeM/CsirtParser.WPF) (UAC) a
 | ![Every UAC parser and KAPE module, grouped, with what each one detects](docs/sources.png) | ![All collections' findings in one grid, filtered by severity, host and source](docs/findings.png) |
 | **Run log** | **Case report** |
 | ![Parallel run, every line names its collection](docs/run-log.png) | ![Case report across Linux and Windows hosts, likelihood per finding](docs/case-report.png) |
-| **Case IOCs** | |
-| ![One IOC list for the whole case, defanged values fixed, type detected](docs/iocs.png) | |
+| **Case IOCs** | **Microsoft 365 sources** |
+| ![One IOC list for the whole case, defanged values fixed, type detected](docs/iocs.png) | ![Microsoft 365 sources: unified audit log and Entra ID sign-in logs](docs/sources-m365.png) |
 
 Screenshots use the synthetic test cases from `tools\` (all IPs from documentation ranges) and are taken by the Screenshots workflow whenever the app's UI changes; the newest are on the [`screenshots`](https://github.com/JuggeM/CsirtTriage/tree/screenshots/docs) branch.
 
