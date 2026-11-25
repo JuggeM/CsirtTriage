@@ -93,14 +93,14 @@
                       Background="White" RowBackground="White" RowHeaderWidth="0" MaxHeight="220" Margin="0,0,0,16"
                       CanUserSortColumns="True" SelectionMode="Single">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="120"/>
+                    <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="110" MinWidth="80"/>
                     <DataGridTextColumn Header="Type" Binding="{Binding KindText}" Width="120"/>
-                    <DataGridTextColumn Header="IP" Binding="{Binding IpText}" Width="130"/>
-                    <DataGridTextColumn Header="Crit" Binding="{Binding Critical}" Width="50"/>
-                    <DataGridTextColumn Header="High" Binding="{Binding High}" Width="50"/>
-                    <DataGridTextColumn Header="Med" Binding="{Binding Medium}" Width="50"/>
-                    <DataGridTextColumn Header="Activity (UTC)" Binding="{Binding ActivityText}" Width="250"/>
-                    <DataGridTextColumn Header="Collection" Binding="{Binding Collection}" Width="*"/>
+                    <DataGridTextColumn Header="IP" Binding="{Binding IpText}" Width="110"/>
+                    <DataGridTextColumn Header="Crit" Binding="{Binding Critical}" Width="45"/>
+                    <DataGridTextColumn Header="High" Binding="{Binding High}" Width="45"/>
+                    <DataGridTextColumn Header="Med" Binding="{Binding Medium}" Width="45"/>
+                    <DataGridTextColumn Header="Activity (UTC)" Binding="{Binding ActivityText}" Width="2*" MinWidth="230"/>
+                    <DataGridTextColumn Header="Collection" Binding="{Binding Collection}" Width="*" MinWidth="170"/>
                 </DataGrid.Columns>
             </DataGrid>
 
