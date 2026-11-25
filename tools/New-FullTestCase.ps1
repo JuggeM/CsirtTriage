@@ -165,6 +165,7 @@ All IPs and domains are from documentation ranges; nothing points at real system
 **Case report**
 - [ ] Title is the case name; the bottom line is drafted from the findings.
 - [ ] Export → HTML, Word (.docx), RTF and case tracker (.xlsx): each opens.
+- [ ] ``Level2\CaseTracker.xlsx`` has two sheets: **Hosts** (DataSource ``UAC: …`` for Linux, ``KAPE: …`` for Windows) and **M365** (account, source IP, location, target).
 
 **IOC search and discovered IOCs, without re-analysing**
 - [ ] IOCs: add ``203.0.113.46`` (cfo's attacker IP in M365), **Save to case**, then **Search analysed collections**. New hits on corp.example.

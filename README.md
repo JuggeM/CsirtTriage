@@ -42,7 +42,7 @@ CaseFolder\
     ├── CaseSummary.txt         hosts ranked, lateral movement, sources logging on to several hosts, IOCs across hosts, case timeline
     ├── CaseFindings.csv        every collection's findings in one file (Timeline Explorer)
     ├── CaseReport.html/.json   case report and your edits to it
-    ├── CaseTracker.xlsx        critical and high findings as case tracker rows
+    ├── CaseTracker.xlsx        critical and high findings as case tracker rows: sheet Hosts (UAC and KAPE), sheet M365
     ├── iocs_discovered.txt     indicators found in findings that are not in iocs.txt yet
     ├── _previous\              earlier results of re-analysed collections
     └── <collection>\

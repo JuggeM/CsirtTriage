@@ -68,6 +68,8 @@ namespace CsirtTriage.Core.Reporting
         public string Id { get; init; } = "";
         public string Host { get; init; } = "";
         public string Collection { get; init; } = "";
+        /// <summary>UAC, KAPE or M365: the type of collection the finding comes from.</summary>
+        public string Kind { get; init; } = "KAPE";
         public IReadOnlyList<string> HostIps { get; init; } = Array.Empty<string>();
         public string Severity { get; init; } = "";
         public int Rank { get; init; }
@@ -252,6 +254,7 @@ namespace CsirtTriage.Core.Reporting
                         Id = StableId(h.Collection, NormalizeForDedup(best.Text)),
                         Host = h.Hostname,
                         Collection = h.Collection,
+                        Kind = h.Kind,
                         HostIps = h.Ips,
                         Severity = best.Severity,
                         Rank = best.Rank,

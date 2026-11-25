@@ -38,7 +38,7 @@ public static class CaseFinisher
                 var data = CaseReport.Build(resultsRoot, caseName, analyst);
                 var rows = CaseTracker.Rows(data, data.Findings.Where(f => f.Rank <= 1));
                 CaseTracker.Write(tracker, rows);
-                log($"Case tracker rows ({rows.Count} critical/high) written: {tracker}");
+                log($"Case tracker rows ({rows.Count} critical/high: {rows.Hosts.Count} on Hosts, {rows.M365.Count} on M365) written: {tracker}");
             }
             catch (IOException ex) { log($"[WARN] {CaseTracker.FileName} not written — is it open in Excel? {ex.Message}"); }
             catch (Exception ex) { log($"[WARN] {CaseTracker.FileName} not written: {ex.Message}"); }

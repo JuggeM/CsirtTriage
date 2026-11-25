@@ -70,6 +70,28 @@ foreach ($h in 'web01', 'db01', 'WS01', 'DC01', 'FS01', 'corp\.example') { Check
 $caseFindings = @(Import-Csv (Join-Path $level2 'CaseFindings.csv') -Encoding UTF8)
 Check (@($caseFindings | Where-Object Source -eq 'EVTX').Count -gt 0 -and @($caseFindings | Where-Object Source -eq 'AUTH').Count -gt 0 -and @($caseFindings | Where-Object Source -like 'M365-*').Count -gt 0) 'CaseFindings.csv has Windows, Linux and M365 findings'
 
+Write-Host 'Case tracker workbook'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$xlsx = [IO.Compression.ZipFile]::OpenRead((Join-Path $level2 'CaseTracker.xlsx'))
+function SheetRows([string] $part) {
+    $xml = (New-Object IO.StreamReader ($xlsx.GetEntry($part).Open())).ReadToEnd()
+    foreach ($row in [regex]::Matches($xml, '(?s)<x:row[^>]*>(.*?)</x:row>')) {
+        ,@([regex]::Matches($row.Groups[1].Value, '(?s)<x:c[^>]*>(.*?)</x:c>') | ForEach-Object { $_.Groups[1].Value -replace '<[^>]+>', '' })
+    }
+}
+$book = (New-Object IO.StreamReader ($xlsx.GetEntry('xl/workbook.xml').Open())).ReadToEnd()
+Check ($book -match 'name="Hosts"' -and $book -match 'name="M365"') 'CaseTracker.xlsx has a Hosts and an M365 sheet'
+$hostRows = @(SheetRows 'xl/worksheets/sheet1.xml' | Select-Object -Skip 1)
+$m365Rows = @(SheetRows 'xl/worksheets/sheet2.xml' | Select-Object -Skip 1)
+$xlsx.Dispose()
+Check (@($hostRows | Where-Object { $_[2] -eq 'web01' -and $_[1] -like 'UAC: *' }).Count -gt 0) 'Hosts sheet: Linux rows labelled UAC'
+Check (@($hostRows | Where-Object { $_[2] -eq 'WS01' -and $_[1] -like 'KAPE: *' }).Count -gt 0) 'Hosts sheet: Windows rows labelled KAPE'
+Check (@($hostRows | Where-Object { $_[2] -eq 'web01' -and $_[1] -like 'KAPE: *' }).Count -eq 0) 'Hosts sheet: no Linux row labelled KAPE'
+Check (@($hostRows | Where-Object { $_[2] -eq 'corp.example' }).Count -eq 0) 'Hosts sheet: no M365 rows'
+Check (@($m365Rows | Where-Object { $_[1] -like 'M365: *' -and $_[2] -eq 'corp.example' }).Count -eq $m365Rows.Count -and $m365Rows.Count -gt 0) "M365 sheet: $($m365Rows.Count) rows, all from the tenant"
+Check (@($m365Rows | Where-Object { $_[6] -like 'Sign-in from a new country for jdoe*' -and $_[3] -eq 'jdoe@corp.example' -and $_[4] -eq '203.0.113.45' -and $_[5] -like 'Amsterdam*NL' }).Count -eq 1) 'M365 sheet: account, source IP and location filled in'
+Check (@($m365Rows | Where-Object { $_[6] -like 'Impossible travel for jdoe*' -and $_[4] -eq '203.0.113.45' }).Count -eq 1) 'M365 sheet: impossible travel points to the new IP, not the usual one'
+
 Write-Host 'Re-analyse keeps earlier results'
 $re = Run @('--only', 'WS01,uac-web01-linux-20261101') 'rerun.log'
 Check ($re.Code -eq 0) "re-run exit code 0 (got $($re.Code))"

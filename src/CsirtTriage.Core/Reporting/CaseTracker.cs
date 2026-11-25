@@ -13,23 +13,46 @@ namespace CsirtTriage.Core.Reporting
 {
     /// <summary>
     /// Findings as rows for the team's case tracker spreadsheet, one row per
-    /// finding, in the tracker's own column order. Who, from where and to where
-    /// are pulled from the finding text (best effort); Mitre Framework and
+    /// finding. Two sheets: "Hosts" (UAC and KAPE collections, in the tracker's
+    /// own column order) and "M365" (the tenant, with account, source IP,
+    /// location and target instead of host columns). Who, from where and to
+    /// where are pulled from the finding text (best effort); Mitre Framework and
     /// ReportHeading are left for the analyst. Written as .xlsx so it opens and
     /// pastes the same in any Excel language.
     /// </summary>
     public static class CaseTracker
     {
         public const string FileName = "CaseTracker.xlsx";
-        public const string Tool = "KAPE";
+        public const string HostsSheet = "Hosts";
+        public const string M365Sheet = "M365";
 
         public static readonly string[] Columns =
         {
             "date/time", "DataSource", "hostsystem", "host IP Address", "Eventdescription", "Account", "SourceHost",
             "SourceIP", "Destination Host", "Remote URL", "Destination IP", "Mitre Framework", "Notes", "Analyst", "ReportHeading",
         };
+        private static readonly double[] Widths = { 19, 22, 14, 16, 70, 18, 16, 15, 16, 30, 15, 18, 80, 14, 18 };
+
+        public static readonly string[] M365Columns =
+        {
+            "date/time", "DataSource", "Tenant", "Account", "Source IP", "Location", "Eventdescription", "Target",
+            "Mitre Framework", "Notes", "Analyst", "ReportHeading",
+        };
+        private static readonly double[] M365Widths = { 19, 22, 16, 26, 15, 26, 70, 30, 18, 80, 14, 18 };
 
         public sealed record Row(DateTime? Time, string[] Values);
+
+        /// <summary>The rows for both sheets.</summary>
+        public sealed record Tracker(List<Row> Hosts, List<Row> M365)
+        {
+            public int Count => Hosts.Count + M365.Count;
+        }
+
+        // M365 fields
+        private static readonly Regex EmailRx = new(@"\b[\w.+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\b", RegexOptions.Compiled);
+        private static readonly Regex QuotedRx = new(@"'(?<v>[^']{1,120})'", RegexOptions.Compiled);
+        // "Amsterdam, Noord-Holland, NL" as the Entra sign-in log writes locations
+        private static readonly Regex LocationRx = new(@"(?<![\w])(?<l>[A-Z][\p{L} .'-]{1,40}, [\p{L} .'-]{1,40}, [A-Z]{2})\b", RegexOptions.Compiled);
 
         // ── Field extraction ─────────────────────────────────────────────
         private const string Ip = @"(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)";
@@ -72,8 +95,18 @@ namespace CsirtTriage.Core.Reporting
             "local", "remote", "all", "more", "same", "each", "every", "rule", "rules", "file", "files", "process", "example",
         };
 
-        /// <summary>One tracker row per finding, oldest first.</summary>
-        public static List<Row> Rows(CaseReportData data, IEnumerable<ReportFinding> findings)
+        /// <summary>One tracker row per finding, oldest first: UAC and KAPE findings on the Hosts sheet, M365 findings on the M365 sheet.</summary>
+        public static Tracker Rows(CaseReportData data, IEnumerable<ReportFinding> findings)
+        {
+            var list = findings.ToList();
+            return new Tracker(
+                HostRows(data, list.Where(f => !IsM365(f))),
+                M365Rows(data, list.Where(IsM365)));
+        }
+
+        private static bool IsM365(ReportFinding f) => f.Kind.Equals("M365", StringComparison.OrdinalIgnoreCase);
+
+        private static List<Row> HostRows(CaseReportData data, IEnumerable<ReportFinding> findings)
         {
             var ipOwner = data.Hosts.SelectMany(h => h.Ips.Select(ip => (ip, h.Host)))
                 .GroupBy(x => x.ip).ToDictionary(g => g.Key, g => g.First().Host);
@@ -138,7 +171,7 @@ namespace CsirtTriage.Core.Reporting
                 rows.Add(new Row(f.TimeUtc, new[]
                 {
                     "",                                    // date/time (written as a date cell)
-                    $"{Tool}: {f.SourceText}",
+                    $"{f.Kind}: {f.SourceText}",
                     f.Host,
                     hostIps,
                     title,
@@ -148,6 +181,61 @@ namespace CsirtTriage.Core.Reporting
                     dstHost,
                     url,
                     dstIp,
+                    "",                                    // Mitre Framework: analyst
+                    string.Join(" · ", notes),
+                    data.Analyst,
+                    "",                                    // ReportHeading: analyst
+                }));
+            }
+            return rows;
+        }
+
+        private static List<Row> M365Rows(CaseReportData data, IEnumerable<ReportFinding> findings)
+        {
+            var rows = new List<Row>();
+            foreach (var f in findings.OrderBy(f => f.TimeUtc ?? DateTime.MaxValue))
+            {
+                var (title, detail) = CaseReport.SplitTitle(f.Text);
+                var all = f.Text;
+                // Accounts from the finding itself, not from lists in its detail (a spray lists every account tried)
+                var emails = EmailRx.Matches(title).Select(m => m.Value).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                // The account the finding is about comes first in the text ("Inbox rule … for jdoe@…", "jdoe@… added to role … by admin@…")
+                var account = emails.FirstOrDefault() ?? "";
+                // Impossible travel and a session in two countries name the usual place first and the new one last:
+                // the new one is the source worth tracking
+                bool newLast = title.StartsWith("Impossible travel", StringComparison.OrdinalIgnoreCase)
+                               || title.StartsWith("Session of", StringComparison.OrdinalIgnoreCase);
+                var ips = IpRx.Matches(title).Select(m => m.Value).ToList();
+                var sourceIp = newLast && ips.Count > 0 ? ips[^1]
+                             : FromRx.Match(all) is { Success: true } from ? from.Groups["ip"].Value
+                             : ips.FirstOrDefault() ?? (IpRx.Match(all) is { Success: true } ip ? ip.Value : "");
+                var locations = LocationRx.Matches(title).Select(m => m.Groups["l"].Value).ToList();
+                var location = locations.Count == 0 ? "" : newLast ? locations[^1] : locations[0];
+                // What it acted on: a quoted name (rule, application, role), else another address (forwarding target, the account reset)
+                var target = QuotedRx.Match(title) is { Success: true } q ? q.Groups["v"].Value
+                           : emails.Skip(1).FirstOrDefault() ?? "";
+                var source = f.SourceText.Replace("M365-", "", StringComparison.OrdinalIgnoreCase);
+
+                var notes = new List<string>
+                {
+                    $"Severity: {f.Severity}",
+                    $"Likelihood: {LikelihoodScale.Label(f.Likelihood)}" + (f.IsAnalystAssessed ? " (set by analyst)" : ""),
+                    "Time UTC",
+                };
+                if (detail.Length > 0) notes.Add(detail);
+                if (!string.IsNullOrWhiteSpace(f.Note)) notes.Add("Analyst note: " + f.Note.Trim());
+                notes.Add($"Collection: {f.Collection}");
+
+                rows.Add(new Row(f.TimeUtc, new[]
+                {
+                    "",                                    // date/time (written as a date cell)
+                    $"M365: {source}",
+                    f.Host,
+                    account,
+                    sourceIp,
+                    location,
+                    title,
+                    target,
                     "",                                    // Mitre Framework: analyst
                     string.Join(" · ", notes),
                     data.Analyst,
@@ -172,8 +260,13 @@ namespace CsirtTriage.Core.Reporting
         }
 
         // ── .xlsx ────────────────────────────────────────────────────────
-        public static void Write(string path, IReadOnlyList<Row> rows)
+        /// <summary>The workbook: the Hosts sheet always, the M365 sheet when there are M365 rows.</summary>
+        public static void Write(string path, Tracker tracker)
         {
+            var sheets = new List<(string Name, string[] Columns, double[] Widths, List<Row> Rows)>
+                { (HostsSheet, Columns, Widths, tracker.Hosts) };
+            if (tracker.M365.Count > 0) sheets.Add((M365Sheet, M365Columns, M365Widths, tracker.M365));
+
             using var doc = SpreadsheetDocument.Create(path, SpreadsheetDocumentType.Workbook);
             var wb = doc.AddWorkbookPart();
             wb.Workbook = new Workbook();
@@ -181,37 +274,51 @@ namespace CsirtTriage.Core.Reporting
             styles.Stylesheet = Styles();
             styles.Stylesheet.Save();
 
-            var sheetData = new SheetData();
-            sheetData.Append(new DocumentFormat.OpenXml.Spreadsheet.Row(Columns.Select(c => TextCell(c, 1))) { RowIndex = 1 });
-            uint r = 1;
-            foreach (var row in rows)
+            var sheetList = new Sheets();
+            var names = new DefinedNames();
+            for (int i = 0; i < sheets.Count; i++)
             {
-                r++;
-                var cells = new List<Cell> { row.Time.HasValue ? DateCell(row.Time.Value) : TextCell("", 0) };
-                cells.AddRange(row.Values.Skip(1).Select(v => TextCell(v, 0)));
-                sheetData.Append(new DocumentFormat.OpenXml.Spreadsheet.Row(cells) { RowIndex = r });
-            }
-
-            var widths = new double[] { 19, 22, 14, 16, 70, 18, 16, 15, 16, 30, 15, 18, 80, 14, 18 };
-            var cols = new DocumentFormat.OpenXml.Spreadsheet.Columns(widths.Select((w, i) =>
-                new Column { Min = (uint)(i + 1), Max = (uint)(i + 1), Width = w, CustomWidth = true }));
-            var lastCell = $"O{Math.Max(r, 1)}";
-
-            var ws = wb.AddNewPart<WorksheetPart>();
-            ws.Worksheet = new Worksheet(
-                new SheetViews(new SheetView(new Pane
+                var (name, columns, widths, rows) = sheets[i];
+                var sheetData = new SheetData();
+                sheetData.Append(new DocumentFormat.OpenXml.Spreadsheet.Row(columns.Select(c => TextCell(c, 1))) { RowIndex = 1 });
+                uint r = 1;
+                foreach (var row in rows)
                 {
-                    VerticalSplit = 1, TopLeftCell = "A2", ActivePane = PaneValues.BottomLeft, State = PaneStateValues.Frozen,
-                }) { TabSelected = true, WorkbookViewId = 0 }),
-                cols,
-                sheetData,
-                new AutoFilter { Reference = $"A1:{lastCell}" });
-            ws.Worksheet.Save();
+                    r++;
+                    var cells = new List<Cell> { row.Time.HasValue ? DateCell(row.Time.Value) : TextCell("", 0) };
+                    cells.AddRange(row.Values.Skip(1).Select(v => TextCell(v, 0)));
+                    sheetData.Append(new DocumentFormat.OpenXml.Spreadsheet.Row(cells) { RowIndex = r });
+                }
 
-            wb.Workbook.Append(
-                new Sheets(new Sheet { Id = wb.GetIdOfPart(ws), SheetId = 1, Name = "Case tracker" }),
-                new DefinedNames(new DefinedName { Name = "_xlnm._FilterDatabase", LocalSheetId = 0, Hidden = true, Text = $"'Case tracker'!$A$1:${lastCell.Replace("O", "O$")}" }));
+                var cols = new DocumentFormat.OpenXml.Spreadsheet.Columns(widths.Select((w, c) =>
+                    new Column { Min = (uint)(c + 1), Max = (uint)(c + 1), Width = w, CustomWidth = true }));
+                var lastCol = ColumnLetter(columns.Length);
+                var ws = wb.AddNewPart<WorksheetPart>();
+                ws.Worksheet = new Worksheet(
+                    new SheetViews(new SheetView(new Pane
+                    {
+                        VerticalSplit = 1, TopLeftCell = "A2", ActivePane = PaneValues.BottomLeft, State = PaneStateValues.Frozen,
+                    }) { TabSelected = i == 0, WorkbookViewId = 0 }),
+                    cols,
+                    sheetData,
+                    new AutoFilter { Reference = $"A1:{lastCol}{Math.Max(r, 1)}" });
+                ws.Worksheet.Save();
+                sheetList.Append(new Sheet { Id = wb.GetIdOfPart(ws), SheetId = (uint)(i + 1), Name = name });
+                names.Append(new DefinedName
+                {
+                    Name = "_xlnm._FilterDatabase", LocalSheetId = (uint)i, Hidden = true,
+                    Text = $"'{name}'!$A$1:${lastCol}${Math.Max(r, 1)}",
+                });
+            }
+            wb.Workbook.Append(sheetList, names);
             wb.Workbook.Save();
+        }
+
+        private static string ColumnLetter(int n)
+        {
+            var s = "";
+            for (; n > 0; n = (n - 1) / 26) s = (char)('A' + (n - 1) % 26) + s;
+            return s;
         }
 
         private static Cell TextCell(string? value, uint style) => new()

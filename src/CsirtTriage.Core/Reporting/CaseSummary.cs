@@ -26,6 +26,8 @@ public static class CaseSummary
     public sealed class HostData
     {
         public string Dir = "", Hostname = "", Collection = "";
+        /// <summary>UAC, KAPE or M365 (host.txt Kind; collections from before it was written count as KAPE).</summary>
+        public string Kind = "KAPE";
         public List<string> Ips = new();
         public List<CaseFinding> Findings = new();
         public List<string[]> Logons = new();   // Host,User,LogonType,SourceHost,SourceIp,Via,Count,First,Last
@@ -282,6 +284,7 @@ public static class CaseSummary
             var (k, v) = (line[..eq], line[(eq + 1)..]);
             if (k == "Hostname") h.Hostname = v;
             else if (k == "IPs") h.Ips = v.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
+            else if (k == "Kind" && v.Length > 0) h.Kind = v.ToUpperInvariant();
         }
         if (h.Hostname.Length == 0) h.Hostname = h.Collection;
         // TimeUtc,LastUtc,Host,Severity,Source,Category,Count,Text,Detail,Artifact
