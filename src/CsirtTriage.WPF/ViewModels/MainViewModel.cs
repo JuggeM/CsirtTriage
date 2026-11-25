@@ -163,10 +163,22 @@ public class MainViewModel : ViewModelBase
     }
 
     // Detection rules file (KAPE)
+    /// <summary>
+    /// The rules file in use, filled in with the default (rules.json next to
+    /// CsirtTriage.exe) so the field always shows which file applies. Clearing
+    /// the field, or entering the default, goes back to the default.
+    /// </summary>
     public string RulesPathText
     {
-        get => Settings.Kape.RulesPath;
-        set { Settings.Kape.RulesPath = (value ?? "").Trim().Trim('"'); OnPropertyChanged(); ReloadRules(); }
+        get => string.IsNullOrWhiteSpace(Settings.Kape.RulesPath) ? RuleSet.DefaultPath : Settings.Kape.RulesPath;
+        set
+        {
+            var v = (value ?? "").Trim().Trim('"');
+            bool isDefault = v.Length == 0 || string.Equals(Path.GetFullPath(v), Path.GetFullPath(RuleSet.DefaultPath), StringComparison.OrdinalIgnoreCase);
+            Settings.Kape.RulesPath = isDefault ? "" : v;
+            OnPropertyChanged();
+            ReloadRules();
+        }
     }
     private string _rulesStatus = "";
     public string RulesStatus { get => _rulesStatus; private set => SetField(ref _rulesStatus, value); }

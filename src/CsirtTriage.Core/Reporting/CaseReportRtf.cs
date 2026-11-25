@@ -41,10 +41,33 @@ namespace CsirtTriage.Core.Reporting
                 metrics.Select(m => $@"\fs17\cf{Muted} {E(m.Label)}\line\fs26\b\cf{Text} {E(m.Value)}").ToArray()
             }, header: false, shading: Surface, borders: false);
 
-            // BLUF
+            // Hosts and collections: what the report covers, before what it concludes
+            H2(sb, "Hosts and collections");
+            var hostRows = new List<string[]> { new[] { "Host", "Type", "IP", "Crit", "High", "Med", "Activity (UTC)", "Collection" } };
+            foreach (var h in data.Hosts)
+                hostRows.Add(new[]
+                {
+                    $@"\f1 {E(h.Host)}",
+                    E(h.KindText),
+                    $@"\f1 {E(h.IpText)}",
+                    h.HasFile ? (h.Critical > 0 ? $@"\b\cf{Red} {h.Critical}" : h.Critical.ToString()) : "?",
+                    h.HasFile ? h.High.ToString() : "?",
+                    h.HasFile ? h.Medium.ToString() : "?",
+                    E(h.ActivityText),
+                    $@"\cf{Muted} {E(h.Collection)}",
+                });
+            Table(sb, new[] { 1100, 1250, 1300, 520, 520, 520, 2350, 2078 }, hostRows.ToArray(), header: true);
+
+            // BLUF: a summary sentence, then the points as a list
             H2(sb, "Bottom line up front");
             foreach (var p in c.Bluf)
-                sb.Append($@"\pard\plain\f0\cf{Text}\li200\sa120\sl300\slmult1\brdrl\brdrs\brdrw30\brsp120\brdrcf{Red}\fs22 ").Append(E(p)).Append(@"\par").AppendLine();
+            {
+                var bullet = CaseReport.IsBullet(p, out var item);
+                sb.Append(bullet
+                        ? $@"\pard\plain\f0\cf{Text}\li560\fi-240\sa80\sl300\slmult1\brdrl\brdrs\brdrw30\brsp120\brdrcf{Red}\fs22 \bullet\tab "
+                        : $@"\pard\plain\f0\cf{Text}\li200\sa120\sl300\slmult1\brdrl\brdrs\brdrw30\brsp120\brdrcf{Red}\fs22 ")
+                  .Append(E(bullet ? item : p)).Append(@"\par").AppendLine();
+            }
             var scale = string.Join("   ", Enum.GetValues<Likelihood>().Reverse()
                 .Select(l => $@"{{\b\cf{Fg(l)} {E(LikelihoodScale.Label(l))}}} {E(LikelihoodScale.Range(l))}"));
             Para(sb, $@"\fs16\cf{Muted} Probability scale:  " + scale, before: 60, after: 120);
@@ -117,21 +140,6 @@ namespace CsirtTriage.Core.Reporting
                 Table(sb, new[] { 1300, 2300, 4838, 1200 }, rows.ToArray(), header: true);
             }
 
-            // Hosts
-            H2(sb, "Hosts");
-            var hostRows = new List<string[]> { new[] { "Host", "IP", "Crit", "High", "Med", "Activity (UTC)", "Collection" } };
-            foreach (var h in data.Hosts)
-                hostRows.Add(new[]
-                {
-                    $@"\f1 {E(h.Host)}",
-                    $@"\f1 {E(h.Ips.Count == 0 ? "unknown" : string.Join(", ", h.Ips))}",
-                    h.HasFile ? (h.Critical > 0 ? $@"\b\cf{Red} {h.Critical}" : h.Critical.ToString()) : "?",
-                    h.HasFile ? h.High.ToString() : "?",
-                    h.HasFile ? h.Medium.ToString() : "?",
-                    h.First.HasValue ? $@"{h.First:yyyy-MM-dd HH:mm} {E("→")} {h.Last:yyyy-MM-dd HH:mm}" : "–",
-                    $@"\cf{Muted} {E(h.Collection)}",
-                });
-            Table(sb, new[] { 1200, 1500, 600, 600, 600, 2400, 2738 }, hostRows.ToArray(), header: true);
 
             // Indicators
             if (data.CaseIocHits.Count > 0 || data.SharedIocs.Count > 0)

@@ -72,13 +72,33 @@ namespace CsirtTriage.Core.Reporting
             mt.Append(mrow);
             body.Append(mt);
 
-            // BLUF
+            // Hosts and collections: what the report covers, before what it concludes
+            body.Append(H1("Hosts and collections"));
+            {
+                var widths = new[] { 1100, 1250, 1300, 520, 520, 520, 2350, 2078 };
+                var t = NewTable(widths);
+                t.Append(HeaderRow(widths, "Host", "Type", "IP", "Crit", "High", "Med", "Activity (UTC)", "Collection"));
+                foreach (var h in data.Hosts)
+                    t.Append(Row(widths,
+                        new[] { M(h.Host) },
+                        new[] { S(h.KindText) },
+                        new[] { M(h.IpText) },
+                        new[] { h.HasFile ? (h.Critical > 0 ? B(h.Critical.ToString(), Red) : S(h.Critical.ToString())) : S("?") },
+                        new[] { S(h.HasFile ? h.High.ToString() : "?") },
+                        new[] { S(h.HasFile ? h.Medium.ToString() : "?") },
+                        new[] { S(h.ActivityText) },
+                        new[] { Dim(h.Collection) }));
+                body.Append(t);
+            }
+
+            // BLUF: a summary sentence, then the points as a list
             body.Append(H1("Bottom line up front"));
             foreach (var p in c.Bluf)
             {
-                body.Append(P(new[] { new Seg(p, Size: 22) }, after: 120,
+                var bullet = CaseReport.IsBullet(p, out var item);
+                body.Append(P(new[] { new Seg(bullet ? "•  " + item : p, Size: 22) }, after: bullet ? 80 : 120,
                     border: new W.ParagraphBorders(new W.LeftBorder { Val = W.BorderValues.Single, Size = 18, Space = 8, Color = Red }),
-                    indent: new W.Indentation { Left = "200" }));
+                    indent: bullet ? new W.Indentation { Left = "560", Hanging = "240" } : new W.Indentation { Left = "200" }));
             }
             var scale = new List<Seg> { Dim("Probability scale:  ") };
             foreach (var l in Enum.GetValues<Likelihood>().Reverse())
@@ -166,23 +186,6 @@ namespace CsirtTriage.Core.Reporting
                 body.Append(t);
             }
 
-            // Hosts
-            body.Append(H1("Hosts"));
-            {
-                var widths = new[] { 1200, 1500, 600, 600, 600, 2400, 2738 };
-                var t = NewTable(widths);
-                t.Append(HeaderRow(widths, "Host", "IP", "Crit", "High", "Med", "Activity (UTC)", "Collection"));
-                foreach (var h in data.Hosts)
-                    t.Append(Row(widths,
-                        new[] { M(h.Host) },
-                        new[] { M(h.Ips.Count == 0 ? "unknown" : string.Join(", ", h.Ips)) },
-                        new[] { h.HasFile ? (h.Critical > 0 ? B(h.Critical.ToString(), Red) : S(h.Critical.ToString())) : S("?") },
-                        new[] { S(h.HasFile ? h.High.ToString() : "?") },
-                        new[] { S(h.HasFile ? h.Medium.ToString() : "?") },
-                        new[] { S(h.First.HasValue ? $"{h.First:yyyy-MM-dd HH:mm} → {h.Last:yyyy-MM-dd HH:mm}" : "–") },
-                        new[] { Dim(h.Collection) }));
-                body.Append(t);
-            }
 
             // Indicators
             if (data.CaseIocHits.Count > 0 || data.SharedIocs.Count > 0)

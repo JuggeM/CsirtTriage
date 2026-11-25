@@ -66,6 +66,8 @@ public class CaseReportViewModel : ViewModelBase
     public IReadOnlyList<LikelihoodOption> LikelihoodOptions => LikelihoodScale.Options;
 
     public ObservableCollection<ReportFinding> Findings { get; } = new();
+    /// <summary>The hosts and collections the report covers (shown above the bottom line).</summary>
+    public ObservableCollection<ReportHost> Hosts { get; } = new();
 
     private string _title = "";
     public string Title { get => _title; set { if (SetField(ref _title, value)) MarkDirty(); } }
@@ -151,6 +153,8 @@ public class CaseReportViewModel : ViewModelBase
 
         CaseReport.ApplyNotes(data, _notes);
         foreach (var f in Findings) f.PropertyChanged -= Finding_Changed;
+        Hosts.Clear();
+        foreach (var h in data.Hosts) Hosts.Add(h);
         Findings.Clear();
         foreach (var f in data.Findings)
         {
@@ -181,6 +185,7 @@ public class CaseReportViewModel : ViewModelBase
     {
         foreach (var f in Findings) f.PropertyChanged -= Finding_Changed;
         Findings.Clear();
+        Hosts.Clear();
         _data = null;
         _loadedFor = null;
         HasData = false;

@@ -122,7 +122,14 @@ namespace CsirtTriage.Core.Reporting
     }
 
     public sealed record ReportHost(string Host, string Collection, IReadOnlyList<string> Ips, bool HasFile,
-                                    int Critical, int High, int Medium, DateTime? First, DateTime? Last);
+                                    int Critical, int High, int Medium, DateTime? First, DateTime? Last, string Kind = "KAPE")
+    {
+        /// <summary>Linux (UAC), Windows (KAPE) or Microsoft 365.</summary>
+        public string KindText => Kind switch { "UAC" => "Linux (UAC)", "M365" => "Microsoft 365", _ => "Windows (KAPE)" };
+        /// <summary>The host's IPs; a tenant has none.</summary>
+        public string IpText => Kind == "M365" ? "tenant" : Ips.Count == 0 ? "unknown" : string.Join(", ", Ips);
+        public string ActivityText => First.HasValue ? $"{First:yyyy-MM-dd HH:mm} → {Last:yyyy-MM-dd HH:mm}" : "–";
+    }
 
     public sealed record ReportIoc(string Kind, string Value, IReadOnlyList<string> Hosts, string Detail,
                                    DateTime? FirstSeen, string Comment);
@@ -201,7 +208,7 @@ namespace CsirtTriage.Core.Reporting
                 var timed = h.Findings.Where(f => f.Rank <= 2 && f.TimeUtc.HasValue).Select(f => f.TimeUtc!.Value).ToList();
                 reportHosts.Add(new ReportHost(h.Hostname, h.Collection, h.Ips, true,
                     h.Findings.Count(f => f.Rank == 0), h.Findings.Count(f => f.Rank == 1), h.Findings.Count(f => f.Rank == 2),
-                    timed.Count > 0 ? timed.Min() : null, timed.Count > 0 ? timed.Max() : null));
+                    timed.Count > 0 ? timed.Min() : null, timed.Count > 0 ? timed.Max() : null, h.Kind));
 
                 // Indicator (or executable name) → sources on this host that mention it
                 var hostIndex = Index(h.Findings, h.Ips);
@@ -321,7 +328,8 @@ namespace CsirtTriage.Core.Reporting
             var noSrum = new List<string>();
             foreach (var h in hosts)
             {
-                var missing = MissingSources(h.Dir);
+                // Missing KAPE module output only means something for KAPE collections
+                var missing = h.Kind == "KAPE" ? MissingSources(h.Dir) : new List<string>();
                 if (missing.Contains("SRUM")) noSrum.Add(h.Hostname);
                 if (missing.Contains("EVTX"))
                     gaps.Add($"No event log output (EvtxECmd) for {h.Hostname}: logons, services, scheduled tasks and process creation could not be checked.");
@@ -489,64 +497,88 @@ namespace CsirtTriage.Core.Reporting
             string.IsNullOrWhiteSpace(data.CaseName) ? "Case report" : data.CaseName.Trim();
 
         /// <summary>A first draft of the bottom line, in estimative language, for the analyst to edit.</summary>
+        /// <summary>
+        /// A first draft of the bottom line, in estimative language, for the analyst
+        /// to edit: one summary sentence, then one line per point starting with
+        /// "• " (findings by host, lateral movement, case IOCs, exfiltration). The
+        /// exports show those lines as a list.
+        /// </summary>
         public static string DraftBluf(CaseReportData data)
         {
             var inc = data.Findings.Where(f => f.Include).ToList();
             if (inc.Count == 0)
-                return "No key findings are included. Based on the collected evidence, malicious activity is unlikely, but coverage gaps below may hide it.";
+                return "No key findings are included. Based on the collected evidence, malicious activity is unlikely, but the intelligence gaps below may hide it.";
 
-            var sb = new StringBuilder();
+            var lines = new List<string>();
             var byHost = inc.GroupBy(f => f.Host)
-                .OrderByDescending(g => g.Max(f => f.Likelihood)).ThenBy(g => g.Min(f => f.TimeUtc ?? DateTime.MaxValue));
-            int hostsWithFindings = byHost.Count();
-            sb.Append($"Malicious activity was found on {hostsWithFindings} of {data.Hosts.Count} host(s). ");
+                .OrderByDescending(g => g.Max(f => f.Likelihood)).ThenBy(g => g.Min(f => f.TimeUtc ?? DateTime.MaxValue)).ToList();
+            var first = inc.Where(f => f.TimeUtc.HasValue).Select(f => f.TimeUtc!.Value).DefaultIfEmpty().Min();
+            var kinds = data.Hosts.GroupBy(h => h.Kind).ToDictionary(g => g.Key, g => g.Count());
+            var scope = new List<string>();
+            if (kinds.GetValueOrDefault("UAC") is int u and > 0) scope.Add($"{u} Linux");
+            if (kinds.GetValueOrDefault("KAPE") is int k and > 0) scope.Add($"{k} Windows");
+            if (kinds.GetValueOrDefault("M365") is int m and > 0) scope.Add(m == 1 ? "the Microsoft 365 tenant" : $"{m} Microsoft 365 tenants");
+            lines.Add($"Malicious activity was found on {byHost.Count} of {data.Hosts.Count} host(s)" +
+                      (scope.Count > 1 ? $" ({JoinAnd(scope)})" : "") +
+                      (first != default ? $", starting {first:yyyy-MM-dd HH:mm} UTC." : "."));
 
-            // Hosts whose strongest finding reads the same are reported together
-            var lines = byHost
+            // The strongest finding per host; hosts whose strongest finding reads the same are one line
+            var groups = byHost
                 .Select(g =>
                 {
                     var top = g.OrderByDescending(f => f.Likelihood).ThenBy(f => f.Rank).ThenBy(f => f.TimeUtc ?? DateTime.MaxValue).First();
-                    var first = g.Where(f => f.TimeUtc.HasValue).Select(f => (DateTime?)f.TimeUtc!.Value).Min();
-                    return (Host: g.Key, Top: top, First: first);
+                    var firstOnHost = g.Where(f => f.TimeUtc.HasValue).Select(f => (DateTime?)f.TimeUtc!.Value).Min();
+                    return (Host: g.Key, Top: top, First: firstOnHost);
                 })
                 .GroupBy(x => (x.Top.Likelihood, Head: Headline(x.Top.Text, 110)))
                 .ToList();
-            foreach (var g in lines.Take(4))
+            foreach (var g in groups.Take(5))
             {
-                var hostsText = JoinAnd(g.Select(x => x.Host).ToList());
-                var what = g.Count() == 1 ? Shorten(SplitTitle(g.First().Top.Text).Title, 140) : g.Key.Head;
-                var first = g.Where(x => x.First.HasValue).Select(x => x.First!.Value).DefaultIfEmpty().Min();
-                sb.Append($"{LikelihoodScale.Label(g.Key.Likelihood)}: {LowerFirst(what)} on {hostsText}");
-                sb.Append(first != default ? $" (earliest activity {first:yyyy-MM-dd HH:mm} UTC). " : ". ");
+                var what = Readable(g.Count() == 1 ? Shorten(SplitTitle(g.First().Top.Text).Title, 140) : g.Key.Head);
+                var since = g.Where(x => x.First.HasValue).Select(x => x.First!.Value).DefaultIfEmpty().Min();
+                lines.Add($"• {JoinAnd(g.Select(x => x.Host).ToList())}, {LikelihoodScale.Label(g.Key.Likelihood).ToLowerInvariant()}: {LowerFirst(what)}." +
+                          (since != default ? $" First seen {since:yyyy-MM-dd HH:mm} UTC." : ""));
             }
-            if (lines.Count > 4) sb.Append($"{lines.Skip(4).Sum(g => g.Count())} more host(s) have findings. ");
+            if (groups.Count > 5) lines.Add($"• {groups.Skip(5).Sum(g => g.Count())} more host(s) have findings; see Key findings.");
 
             if (data.Lateral.Count > 0)
             {
-                var links = data.Lateral.Select(l => $"{l.From} → {l.To}").Distinct().Take(4);
-                sb.Append($"Lateral movement between case hosts is likely ({string.Join(", ", links)}). ");
+                var links = data.Lateral.Select(l => $"{l.From} → {l.To}").Distinct().ToList();
+                lines.Add($"• Lateral movement between case hosts is likely: {string.Join(", ", links.Take(5))}{(links.Count > 5 ? ", …" : "")}.");
             }
             if (data.CaseIocHits.Count > 0)
             {
                 var multi = data.CaseIocHits.Count(i => i.Hosts.Count > 1);
-                sb.Append($"{data.CaseIocHits.Count} indicator(s) from the case IOC list were seen" +
-                          (multi > 0 ? $", {multi} of them on more than one host, which highly likely points to the same actor. " : ". "));
+                lines.Add($"• {data.CaseIocHits.Count} indicator(s) from the case IOC list were seen" +
+                          (multi > 0 ? $", {multi} of them on more than one host: highly likely the same actor." : "."));
             }
             else if (data.SharedIocs.Count > 0)
-            {
-                sb.Append($"{data.SharedIocs.Count} indicator(s) appear on more than one host, so a single actor or campaign is likely. ");
-            }
-            // Exfiltration: what SRUM shows, or that it could not be checked
-            var sent = data.Findings.Where(f => f.Include && f.Sources.Contains("SRUM") && f.Text.Contains(" sent ")).ToList();
+                lines.Add($"• {data.SharedIocs.Count} indicator(s) appear on more than one host: a single actor or campaign is likely.");
+
+            // Exfiltration: what SRUM shows (Windows), or that it could not be checked
+            var sent = inc.Where(f => f.Sources.Contains("SRUM") && f.Text.Contains(" sent ")).ToList();
+            bool anyWindows = kinds.GetValueOrDefault("KAPE") > 0;
             if (sent.Count > 0)
-                sb.Append($"SRUM shows {JoinAnd(sent.Select(f => $"{Regex.Match(f.Text, @"^\S+ sent [\d.]+ [KMG]B").Value} on {f.Host}").Distinct().Take(3).ToList())}, so data exfiltration is likely. ");
-            else if (data.NoSrumHosts.Count == 0)
-                sb.Append("SRUM shows no upload by a known tool or staged binary. ");
-            if (data.NoSrumHosts.Count > 0)
-                sb.Append(data.NoSrumHosts.Count == data.Hosts.Count
-                    ? "Data exfiltration has not been assessed (no SRUM output)."
-                    : $"Data sent out could not be checked on {JoinAnd(data.NoSrumHosts)} (no SRUM output).");
-            return sb.ToString().Trim();
+                lines.Add($"• Data exfiltration is likely: SRUM shows {JoinAnd(sent.Select(f => $"{Regex.Match(f.Text, @"^\S+ sent [\d.]+ [KMG]B").Value} on {f.Host}").Distinct().Take(3).ToList())}" +
+                          (data.NoSrumHosts.Count > 0 ? $"; not checked on {JoinAnd(data.NoSrumHosts)} (no SRUM output)." : "."));
+            else if (anyWindows && data.NoSrumHosts.Count == 0)
+                lines.Add("• SRUM shows no upload by a known tool or staged binary.");
+            else if (anyWindows)
+                lines.Add($"• Data sent out could not be checked on {JoinAnd(data.NoSrumHosts)} (no SRUM output).");
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        /// <summary>A finding title for readers outside the team: no repeat counts "(x12)" or event IDs "(4688)".</summary>
+        private static string Readable(string title) =>
+            Regex.Replace(Regex.Replace(title, @"\s*\((?:x\d+|\d{3,5})(?:,[^)]*)?\)", ""), @"\s{2,}", " ").Trim().TrimEnd('.', ':');
+
+        /// <summary>Bottom-line lines that start with "• " are list items in the exports.</summary>
+        public static bool IsBullet(string line, out string text)
+        {
+            var t = line.TrimStart();
+            bool bullet = t.StartsWith('•') || t.StartsWith("- ") || t.StartsWith("* ");
+            text = bullet ? t[1..].TrimStart() : line;
+            return bullet;
         }
 
         private static string Shorten(string s, int max)
@@ -684,10 +716,34 @@ namespace CsirtTriage.Core.Reporting
             Metric(sb, "Activity span", c.ActivitySpan);
             sb.Append("</section>");
 
-            // BLUF
+            // Hosts and collections: what the report covers, before what it concludes
+            sb.Append("<h2>Hosts and collections</h2><table><thead><tr><th>Host</th><th>Type</th><th>IP</th><th class=\"num\">Crit</th><th class=\"num\">High</th><th class=\"num\">Med</th><th>Activity (UTC)</th><th>Collection</th></tr></thead><tbody>");
+            foreach (var h in data.Hosts)
+                sb.Append($"<tr><td class=\"mono\">{E(h.Host)}</td><td class=\"nowrap\">{E(h.KindText)}</td><td class=\"mono\">{E(h.IpText)}</td>" +
+                          (h.HasFile
+                              ? $"<td class=\"num{(h.Critical > 0 ? " crit" : "")}\">{h.Critical}</td><td class=\"num\">{h.High}</td><td class=\"num\">{h.Medium}</td>"
+                              : "<td class=\"num\">?</td><td class=\"num\">?</td><td class=\"num\">?</td>") +
+                          $"<td class=\"nowrap\">{h.ActivityText}</td><td class=\"muted\">{E(h.Collection)}</td></tr>");
+            sb.Append("</tbody></table>");
+
+            // BLUF: a summary sentence, then the points as a list
             sb.Append("<h2>Bottom line up front</h2>");
             sb.Append("<div class=\"bluf\">");
-            foreach (var p in c.Bluf) sb.Append($"<p>{E(p)}</p>");
+            bool inList = false;
+            foreach (var p in c.Bluf)
+            {
+                if (IsBullet(p, out var item))
+                {
+                    if (!inList) { sb.Append("<ul>"); inList = true; }
+                    sb.Append($"<li>{E(item)}</li>");
+                }
+                else
+                {
+                    if (inList) { sb.Append("</ul>"); inList = false; }
+                    sb.Append($"<p>{E(p)}</p>");
+                }
+            }
+            if (inList) sb.Append("</ul>");
             sb.Append("</div>");
             sb.Append("<div class=\"scale\"><span>Probability scale:</span>");
             foreach (var l in Enum.GetValues<Likelihood>().Reverse())
@@ -743,18 +799,6 @@ namespace CsirtTriage.Core.Reporting
                 sb.Append("</tbody></table>");
             }
 
-            // Hosts
-            sb.Append("<h2>Hosts</h2><table><thead><tr><th>Host</th><th>IP</th><th class=\"num\">Crit</th><th class=\"num\">High</th><th class=\"num\">Med</th><th>Activity (UTC)</th><th>Collection</th></tr></thead><tbody>");
-            foreach (var h in data.Hosts)
-            {
-                var act = h.First.HasValue ? $"{h.First:yyyy-MM-dd HH:mm} → {h.Last:yyyy-MM-dd HH:mm}" : "–";
-                sb.Append($"<tr><td class=\"mono\">{E(h.Host)}</td><td class=\"mono\">{E(h.Ips.Count == 0 ? "unknown" : string.Join(", ", h.Ips))}</td>" +
-                          (h.HasFile
-                              ? $"<td class=\"num{(h.Critical > 0 ? " crit" : "")}\">{h.Critical}</td><td class=\"num\">{h.High}</td><td class=\"num\">{h.Medium}</td>"
-                              : "<td class=\"num\">?</td><td class=\"num\">?</td><td class=\"num\">?</td>") +
-                          $"<td class=\"nowrap\">{act}</td><td class=\"muted\">{E(h.Collection)}</td></tr>");
-            }
-            sb.Append("</tbody></table>");
 
             // Indicators
             if (data.CaseIocHits.Count > 0 || data.SharedIocs.Count > 0)
@@ -839,6 +883,8 @@ header{display:flex;justify-content:space-between;align-items:flex-start;gap:16p
 .mv small{font-size:13px;font-weight:400;color:var(--faint)}
 .bluf{border-left:3px solid var(--red);padding:2px 0 2px 16px;font-size:16px;line-height:1.7}
 .bluf p{margin:0 0 8px}
+.bluf ul{margin:0 0 8px;padding-left:20px}
+.bluf li{margin:0 0 6px}
 .scale{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:12px;font-size:12px;color:var(--muted)}
 .finding{border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:12px;break-inside:avoid}
 .fhead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}

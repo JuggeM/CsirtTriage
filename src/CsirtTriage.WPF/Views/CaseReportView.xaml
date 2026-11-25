@@ -86,15 +86,33 @@
                 </StackPanel>
             </Grid>
 
+            <!-- Hosts and collections the report covers -->
+            <TextBlock Text="Hosts and collections" Style="{StaticResource FieldLabel}"/>
+            <DataGrid ItemsSource="{Binding Hosts}" AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column"
+                      GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="{StaticResource BorderBrush}" BorderBrush="{StaticResource BorderBrush}"
+                      Background="White" RowBackground="White" RowHeaderWidth="0" MaxHeight="220" Margin="0,0,0,16"
+                      CanUserSortColumns="True" SelectionMode="Single">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Host" Binding="{Binding Host}" Width="120"/>
+                    <DataGridTextColumn Header="Type" Binding="{Binding KindText}" Width="120"/>
+                    <DataGridTextColumn Header="IP" Binding="{Binding IpText}" Width="130"/>
+                    <DataGridTextColumn Header="Crit" Binding="{Binding Critical}" Width="50"/>
+                    <DataGridTextColumn Header="High" Binding="{Binding High}" Width="50"/>
+                    <DataGridTextColumn Header="Med" Binding="{Binding Medium}" Width="50"/>
+                    <DataGridTextColumn Header="Activity (UTC)" Binding="{Binding ActivityText}" Width="250"/>
+                    <DataGridTextColumn Header="Collection" Binding="{Binding Collection}" Width="*"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
             <!-- Bottom line -->
             <DockPanel Margin="0,0,0,4">
                 <Button DockPanel.Dock="Right" Content="Redraft from findings" Style="{StaticResource StandardButton}"
                         Command="{Binding DraftBlufCommand}" Height="26" Padding="10,0"
                         ToolTip="Replaces the text below with a new draft based on the findings included in the report"/>
-                <TextBlock Text="Bottom line up front (2–4 sentences, use likelihood terms)" Style="{StaticResource FieldLabel}"
+                <TextBlock Text="Bottom line up front: a summary sentence, then one point per line starting with • (use likelihood terms)" Style="{StaticResource FieldLabel}"
                            VerticalAlignment="Bottom"/>
             </DockPanel>
-            <TextBox Style="{StaticResource MultiLine}" MinHeight="96" MaxHeight="180"
+            <TextBox Style="{StaticResource MultiLine}" MinHeight="140" MaxHeight="260"
                      Text="{Binding Bluf, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,16"/>
 
             <!-- Findings -->

@@ -129,7 +129,7 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBox Text="{Binding RulesPathText, UpdateSourceTrigger=LostFocus}" Margin="0,0,8,0"
-                             ToolTip="Empty: rules.json next to CsirtTriage.exe"/>
+                             ToolTip="The rules file in use. By default rules.json next to CsirtTriage.exe; clear the field to go back to it."/>
                     <Button Grid.Column="1" Content="Browse…" Style="{StaticResource StandardButton}" Command="{Binding BrowseRulesCommand}" Margin="0,0,6,0"/>
                     <Button Grid.Column="2" Content="Edit" Style="{StaticResource StandardButton}" Command="{Binding OpenRulesCommand}" Margin="0,0,6,0"/>
                     <Button Grid.Column="3" Content="Reload" Style="{StaticResource StandardButton}" Command="{Binding ReloadRulesCommand}"/>

@@ -163,7 +163,8 @@ All IPs and domains are from documentation ranges; nothing points at real system
 - [ ] *Sources logging on to several hosts*: 203.0.113.45 → Linux hosts, WS01 and corp.example.
 
 **Case report**
-- [ ] Title is the case name; the bottom line is drafted from the findings.
+- [ ] Title is the case name. **Hosts and collections** (host, type, IP, critical/high/medium) comes before the bottom line.
+- [ ] The bottom line is one summary sentence and then a list: the strongest finding per host, lateral movement, case IOCs, exfiltration.
 - [ ] Export → HTML, Word (.docx), RTF and case tracker (.xlsx): each opens.
 - [ ] ``Level2\CaseTracker.xlsx`` has two sheets: **Hosts** (DataSource ``UAC: …`` for Linux, ``KAPE: …`` for Windows) and **M365** (account, source IP, location, target).
 
