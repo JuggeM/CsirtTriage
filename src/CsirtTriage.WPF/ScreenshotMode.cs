@@ -30,6 +30,8 @@ internal static class ScreenshotMode
 
         await Shot(window, vm, "Case", Path.Combine(outDir, "case.png"));
         await Shot(window, vm, "Sources", Path.Combine(outDir, "sources.png"));
+        // The Microsoft 365 sources are at the bottom of the panel
+        await Shot(window, vm, "Sources", Path.Combine(outDir, "sources-m365.png"), scrollToEnd: true);
         await Shot(window, vm, "Settings", Path.Combine(outDir, "settings.png"));
         await Shot(window, vm, "Iocs", Path.Combine(outDir, "iocs.png"));
 
@@ -66,11 +68,16 @@ internal static class ScreenshotMode
         await Settle();
     }
 
-    private static async Task Shot(Window window, MainViewModel vm, string panel, string path)
+    private static async Task Shot(Window window, MainViewModel vm, string panel, string path, bool scrollToEnd = false)
     {
         await Navigate(window, vm, panel);
         await Task.Delay(500);   // timers (log flush) and bindings
         await Settle();
+        if (scrollToEnd)
+        {
+            foreach (var sv in Descendants<ScrollViewer>(window)) sv.ScrollToEnd();
+            await Settle();
+        }
 
         var root = (FrameworkElement)window.Content;
         root.UpdateLayout();
