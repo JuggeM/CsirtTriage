@@ -79,7 +79,15 @@ jobs:
           | $zip | ``$zipHash`` |
           "@
           Set-Content notes.md $notes -Encoding utf8
-          $ghArgs = @('release', 'create', $tag, 'publish\CsirtTriage.exe', 'publish\rules.json', $zip,
-                      '--title', "CsirtTriage $version", '--notes-file', 'notes.md', '--target', '${{ github.sha }}', '--latest')
-          gh @ghArgs
+          $files = @('publish\CsirtTriage.exe', 'publish\rules.json', $zip)
+          # A release created by hand on GitHub first (or a re-run) gets the files and notes instead of failing
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Release $tag already exists: uploading the files and updating it."
+            gh release upload $tag @files --clobber
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            gh release edit $tag --title "CsirtTriage $version" --notes-file notes.md --prerelease=false --draft=false --latest
+          } else {
+            gh release create $tag @files --title "CsirtTriage $version" --notes-file notes.md --target '${{ github.sha }}' --latest
+          }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
